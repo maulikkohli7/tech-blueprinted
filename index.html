@@ -1,0 +1,2115 @@
+<!doctype html>
+<html lang="en" data-skin="blueprint">
+<head>
+<meta charset="utf-8">
+<meta name="description" content="Interactive, step-by-step visual guides to how software works inside. Starting with Postgres: pages, MVCC, B-tree indexes, VACUUM, HOT updates, TOAST and shared buffers.">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tech, Blueprinted: software internals, drawn open</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#E8ECF0; --panel:#F8FAFB; --panel2:#EEF2F5; --ink:#17212E; --muted:#5A6777; --line:#C8D1DB;
+  --accent:#336791; --accent-soft:#D6E3EF;
+  --live:#2B856A; --live-soft:#DCEFE8; --dead:#B0473A; --dead-soft:#F4E0DD;
+  --amber:#B87C0E; --amber-soft:#F6EBD3; --grey:#8791A0; --grey-soft:#E6E9ED;
+  --sans:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --display:var(--sans); --prose:var(--sans); --on-accent:#fff; --r:10px;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F151C; --panel:#17202A; --panel2:#1D2834; --ink:#E2E8EE; --muted:#93A0AF; --line:#2B3846;
+    --accent:#7FA9D3; --accent-soft:#1F3347;
+    --live:#55C29C; --live-soft:#173229; --dead:#E27467; --dead-soft:#3A1F1C;
+    --amber:#E3B04B; --amber-soft:#382C14; --grey:#6E7A89; --grey-soft:#232D38;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F151C; --panel:#17202A; --panel2:#1D2834; --ink:#E2E8EE; --muted:#93A0AF; --line:#2B3846;
+  --accent:#7FA9D3; --accent-soft:#1F3347;
+  --live:#55C29C; --live-soft:#173229; --dead:#E27467; --dead-soft:#3A1F1C;
+  --amber:#E3B04B; --amber-soft:#382C14; --grey:#6E7A89; --grey-soft:#232D38;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+code,.mono{font-family:var(--mono)}
+
+header.top{max-width:1500px;margin:0 auto;padding:22px 20px 10px;display:flex;flex-wrap:wrap;gap:14px 28px;align-items:flex-end;justify-content:space-between}
+header.top h1{margin:0;font-size:1.65rem;line-height:1.15;font-weight:700;letter-spacing:-.01em}
+header.top h1 span{display:block;font-weight:400;font-size:.95rem;color:var(--muted);letter-spacing:0;margin-top:6px;max-width:62ch}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.seg button{border:0;background:none;padding:6px 12px;cursor:pointer;font-size:.85rem;color:var(--muted)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+:root[data-theme="dark"] .seg button[aria-pressed="true"]{color:#0F151C}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .seg button[aria-pressed="true"]{color:#0F151C}}
+.ctl-label{font-size:.85rem;color:var(--muted)}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:.85rem}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+:root[data-theme="dark"] .btn.primary{color:#0F151C}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .btn.primary{color:#0F151C}}
+
+main.layout{max-width:1500px;margin:0 auto;padding:6px 20px 40px;display:grid;grid-template-columns:minmax(340px,430px) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:1050px){main.layout{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:18px;min-width:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;min-width:0}
+.panel>h2{margin:0;padding:12px 16px 0;font-size:1rem;font-weight:600}
+.panel .sub{color:var(--muted);font-size:.85rem;padding:2px 16px 0;margin:0}
+.panel-body{padding:12px 16px 16px}
+
+/* ---------- tour ---------- */
+.tour-list{display:flex;flex-direction:column;gap:6px}
+.tour-item{text-align:left;border:1px solid var(--line);background:var(--panel2);border-radius:8px;padding:9px 12px;cursor:pointer}
+.tour-item:hover{border-color:var(--accent)}
+.tour-item b{display:block;font-weight:600;font-size:.92rem}
+.tour-item span{font-size:.82rem;color:var(--muted)}
+.tour-note{background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:.9rem;margin:0 0 10px}
+.tour-next{font-size:.85rem;color:var(--muted);margin-bottom:8px}
+.tour-next code{display:block;margin-top:4px;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:.8rem;white-space:pre-wrap;word-break:break-word}
+.tour-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.progress{font-size:.8rem;color:var(--muted);margin-left:auto}
+
+/* ---------- sessions ---------- */
+.session.next-up{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.s-head{display:flex;align-items:center;gap:10px;padding:12px 16px 0;flex-wrap:wrap}
+.s-head h2{margin:0;font-size:1rem;font-weight:600}
+.pill{font-size:.75rem;padding:2px 8px;border-radius:99px;background:var(--grey-soft);color:var(--muted)}
+.pill.tx{background:var(--amber-soft);color:var(--amber)}
+.pill.fail{background:var(--dead-soft);color:var(--dead)}
+.s-head select{margin-left:auto;font-size:.8rem;border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:3px 6px}
+.s-meta{font-family:var(--mono);font-size:.76rem;color:var(--muted);padding:6px 16px 0;display:flex;gap:16px;flex-wrap:wrap}
+.s-meta b{color:var(--ink);font-weight:500}
+.log{margin:10px 16px 0;background:var(--panel2);border:1px solid var(--line);border-radius:8px;height:230px;overflow:auto;padding:8px 10px;font-family:var(--mono);font-size:.76rem;line-height:1.45}
+.log .empty{color:var(--muted);font-family:var(--sans);font-size:.85rem}
+.l-cmd{margin-top:6px;white-space:pre-wrap;word-break:break-word}
+.l-cmd:first-child{margin-top:0}
+.prompt{color:var(--accent);user-select:none}
+.l-ok{color:var(--muted)}
+.l-warn{color:var(--amber);white-space:pre-wrap}
+.l-err{color:var(--dead);white-space:pre-wrap}
+.l-hint{color:var(--muted);white-space:pre-wrap}
+.l-rows{overflow-x:auto}
+.l-rows table{border-collapse:collapse;margin:2px 0}
+.l-rows th,.l-rows td{padding:0 10px 0 0;text-align:left;white-space:nowrap}
+.l-rows th{font-weight:500;color:var(--muted);border-bottom:1px solid var(--line)}
+.l-count{color:var(--muted)}
+.inrow{display:flex;gap:8px;margin:10px 16px 0;align-items:center}
+.inrow .prompt{font-family:var(--mono);font-size:.8rem}
+.inrow input{flex:1;min-width:0;font-family:var(--mono);font-size:.82rem;border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:7px 9px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;padding:8px 16px 14px}
+.chip{border:1px solid var(--line);background:none;border-radius:6px;padding:2px 8px;font-family:var(--mono);font-size:.72rem;cursor:pointer;color:var(--muted)}
+.chip:hover{color:var(--ink);border-color:var(--accent)}
+
+/* ---------- heap ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.78rem;color:var(--muted);padding:8px 16px 0}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.pages{display:grid;grid-template-columns:repeat(auto-fill,minmax(265px,1fr));gap:14px}
+.page{border:1.5px solid var(--ink);border-radius:4px;background:var(--panel);overflow:hidden}
+.page-head{display:flex;flex-wrap:wrap;gap:4px 10px;justify-content:space-between;align-items:baseline;padding:7px 10px;border-bottom:1px solid var(--line);font-size:.85rem}
+.page-head b{font-weight:600}
+.page-head span{color:var(--muted);font-size:.75rem;font-family:var(--mono)}
+.slotbar{display:flex;height:30px;border-bottom:1.5px solid var(--ink);font-family:var(--mono);font-size:.62rem}
+.slotbar>div{display:flex;align-items:center;justify-content:center;border-right:1px solid var(--line);overflow:hidden;white-space:nowrap}
+.slotbar>div:last-child{border-right:0}
+.sb-hdr{width:9%;background:var(--panel2);color:var(--muted)}
+.sb-lp{width:5%;background:var(--accent-soft);color:var(--accent)}
+.sb-lp.redirect{background:var(--accent);color:var(--panel)}
+.sb-lp.dead{background:var(--dead-soft);color:var(--dead)}
+.sb-lp.unused{background:repeating-linear-gradient(135deg,var(--panel2) 0 3px,transparent 3px 6px);color:var(--muted)}
+.sb-free{flex:1;color:var(--muted);background:var(--panel)}
+.sb-t{width:11%;color:#fff;font-weight:600}
+.sb-t.live{background:var(--live)} .sb-t.dead{background:var(--dead)} .sb-t.uncommitted,.sb-t.locked{background:var(--amber)} .sb-t.aborted{background:var(--grey)}
+:root[data-theme="dark"] .sb-t{color:#0F151C}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .sb-t{color:#0F151C}}
+.slotcap{display:flex;justify-content:space-between;font-size:.66rem;color:var(--muted);padding:3px 10px 0;font-family:var(--mono)}
+.lps{padding:8px 10px 10px;display:flex;flex-direction:column;gap:7px}
+.lprow{display:grid;grid-template-columns:38px 1fr;gap:7px;align-items:stretch}
+.lpn{font-family:var(--mono);font-size:.7rem;color:var(--accent);background:var(--accent-soft);border-radius:4px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.2}
+.lprow.unused .lpn{color:var(--muted);background:var(--panel2)}
+.tuple{border:1px solid var(--line);border-left:4px solid var(--live);border-radius:5px;padding:5px 7px;font-size:.74rem;background:var(--live-soft);position:relative;transition:box-shadow .2s, opacity .2s}
+.tuple.dead{border-left-color:var(--dead);background:var(--dead-soft)}
+.tuple.uncommitted,.tuple.locked{border-left-color:var(--amber);background:var(--amber-soft)}
+.tuple.aborted{border-left-color:var(--grey);background:var(--grey-soft)}
+.tuple.hidden-lens{opacity:.38}
+.tuple .t1{display:flex;justify-content:space-between;gap:6px;align-items:baseline}
+.tuple .tid{font-family:var(--mono);font-weight:600}
+.tuple .state{font-size:.68rem;color:var(--muted)}
+.tuple .hdrs{display:flex;flex-wrap:wrap;gap:2px 12px;font-family:var(--mono);margin-top:2px}
+.tuple .hdrs>span{white-space:nowrap}
+.tuple .hdrs span{color:var(--muted)}
+.tuple .hdrs b{font-weight:500;color:var(--ink)}
+.hint{font-size:.6rem;font-family:var(--sans);color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:0 3px;margin-left:3px;vertical-align:1px}
+.tuple .data{font-family:var(--mono);margin-top:3px;color:var(--ink);word-break:break-word}
+.tuple .lensv{display:block;margin-top:3px;font-size:.68rem;font-weight:600}
+.tuple .lensv.y{color:var(--live)} .tuple .lensv.n{color:var(--dead)}
+.unused-box{border:1px dashed var(--line);border-radius:5px;padding:6px 8px;font-size:.72rem;color:var(--muted)}
+.touch{box-shadow:0 0 0 2px var(--accent)}
+.touch-tag{position:absolute;top:-8px;right:8px;background:var(--accent);color:#fff;font-size:.6rem;border-radius:3px;padding:0 5px;line-height:15px}
+:root[data-theme="dark"] .touch-tag{color:#0F151C}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .touch-tag{color:#0F151C}}
+.ping{box-shadow:0 0 0 3px var(--amber)!important}
+
+/* ---------- trace ---------- */
+.trace-sql{font-family:var(--mono);font-size:.8rem;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:7px 9px;word-break:break-word}
+.trace-plan{font-family:var(--mono);font-size:.78rem;color:var(--accent);margin:8px 0 6px;word-break:break-word}
+.steps{list-style:none;margin:0;padding:0;font-size:.82rem;max-height:420px;overflow:auto}
+.steps li{padding:3px 0 3px 22px;position:relative;border-top:1px solid transparent}
+.steps li::before{position:absolute;left:2px;top:3px;font-family:var(--mono);font-weight:600;width:16px;text-align:center}
+.steps li.head{font-weight:600;margin-top:4px}
+.steps li.sub{color:var(--muted);font-size:.78rem;padding-left:34px}
+.steps li[data-tid]{cursor:default}
+.steps li[data-tid]:hover{background:var(--panel2)}
+.v-vis::before{content:"✓";color:var(--live)}
+.v-invis::before{content:"✕";color:var(--dead)}
+.v-skip::before{content:"–";color:var(--muted)}
+.v-new::before{content:"+";color:var(--live)}
+.v-del::before{content:"x";color:var(--amber)}
+.v-keep::before{content:"!";color:var(--amber)}
+.v-removed::before{content:"−";color:var(--dead)}
+.v-err::before{content:"!";color:var(--dead)}
+.v-blocked::before{content:"⏳"}
+.v-ok::before{content:"✓";color:var(--live)}
+.v-abort::before{content:"↺";color:var(--dead)}
+.stats{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.stat{background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-size:.75rem;color:var(--muted)}
+.stat b{display:block;font-size:1.05rem;color:var(--ink);font-family:var(--mono);font-weight:600}
+
+/* ---------- index + xact ---------- */
+.two{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:18px}
+@media (max-width:760px){.two{grid-template-columns:minmax(0,1fr)}}
+.empty-msg{color:var(--muted);font-size:.85rem}
+.btree{margin-bottom:14px;overflow-x:auto}
+.btree-name{font-family:var(--mono);font-size:.8rem;margin-bottom:8px}
+.root{display:flex;justify-content:center;margin-bottom:14px;position:relative}
+.node{border:1.5px solid var(--ink);border-radius:4px;background:var(--panel);font-family:var(--mono);font-size:.72rem}
+.node .nh{font-family:var(--sans);font-size:.66rem;color:var(--muted);padding:2px 6px;border-bottom:1px solid var(--line)}
+.node .nb{padding:4px 6px;display:flex;gap:6px;flex-wrap:wrap}
+.leaves{display:flex;gap:8px;position:relative;padding-top:10px;border-top:1.5px solid var(--line);width:max-content;min-width:100%}
+.leaf .nb{flex-direction:column;gap:2px;min-width:92px}
+.ie{white-space:nowrap;padding:0 3px;border-radius:3px}
+.ie.dead,.ie.aborted{color:var(--dead);text-decoration:line-through;text-decoration-thickness:1px}
+.ie.uncommitted,.ie.locked{color:var(--amber)}
+.ie.hit.dead,.ie.hit.aborted{text-decoration:line-through}
+.ie.rd{background:var(--accent-soft);color:var(--accent)}
+.ie .inc{color:var(--muted);font-size:.92em}
+.ie.hit .inc{color:inherit;opacity:.8}
+.leaf .nb{min-width:120px}
+.ie.hit{background:var(--accent);color:#fff;text-decoration:none}
+:root[data-theme="dark"] .ie.hit{color:#0F151C}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .ie.hit{color:#0F151C}}
+.xlist{display:flex;flex-wrap:wrap;gap:6px}
+.xchip{font-family:var(--mono);font-size:.74rem;border-radius:6px;padding:3px 8px;border:1px solid var(--line)}
+.xchip.committed{background:var(--live-soft);color:var(--live)}
+.xchip.aborted{background:var(--grey-soft);color:var(--grey)}
+.xchip.inprog{background:var(--amber-soft);color:var(--amber)}
+.xnext{font-size:.82rem;color:var(--muted);margin-top:10px}
+.xnext b{font-family:var(--mono);color:var(--ink)}
+details.ref{font-size:.82rem}
+details.ref summary{cursor:pointer;padding:12px 16px;font-weight:600;font-size:.95rem}
+details.ref .panel-body{padding-top:0}
+details.ref code{font-size:.75rem}
+details.ref ul{margin:6px 0;padding-left:18px}
+details.ref li{margin:3px 0}
+.diff{font-size:.82rem;color:var(--muted)}
+.diff p{margin:0 0 8px}
+
+/* ---------- v2: HOT, TOAST, shared memory ---------- */
+.lpbox{border:1px dashed var(--line);border-radius:5px;padding:6px 8px;font-size:.72rem;color:var(--muted)}
+.lpbox.redirect{border:1px solid var(--accent);border-style:solid;color:var(--accent);background:var(--accent-soft)}
+.lpbox.dead{border-color:var(--dead);color:var(--dead)}
+.lprow.redirect .lpn{background:var(--accent);color:var(--panel)}
+.lprow.dead .lpn{background:var(--dead-soft);color:var(--dead)}
+.badges{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}
+.badge{font-size:.62rem;border-radius:3px;padding:0 5px;line-height:16px;border:1px solid var(--accent);color:var(--accent)}
+.badge.solid{background:var(--accent);color:var(--panel)}
+.badge.toast{border-color:var(--amber);color:var(--amber)}
+.tuple .notes{font-family:var(--mono);font-size:.68rem;color:var(--muted);margin-top:2px;word-break:break-word}
+.tuple .size{font-family:var(--mono);font-size:.66rem;color:var(--muted)}
+.v-hot::before{content:"↪";color:var(--accent)}
+.v-nohot::before{content:"·";color:var(--amber)}
+.v-toast::before{content:"⇢";color:var(--amber)}
+.v-evict::before{content:"↻";color:var(--amber)}
+.steps li.buf{color:var(--accent);opacity:.85}
+.steps.nobuf li.buf{display:none}
+.trace-tools{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:0 16px}
+.trace-tools label{font-size:.8rem;color:var(--muted);display:flex;gap:6px;align-items:center;cursor:pointer}
+.bufline{font-family:var(--mono);font-size:.76rem;margin-top:10px;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:6px 9px}
+.bufline span{color:var(--muted)}
+.shm-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px 0}
+.shm-head h2{margin:0;font-size:1rem;font-weight:600}
+.shm-head label{font-size:.8rem;color:var(--muted);display:flex;gap:6px;align-items:center}
+.shm-head select{font-family:var(--mono);font-size:.8rem;border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:3px 6px}
+.shm-box{border:1.5px dashed var(--accent);border-radius:10px;padding:12px;position:relative}
+.shm-box>.lbl{position:absolute;top:-10px;left:12px;background:var(--panel);padding:0 6px;font-size:.75rem;color:var(--accent);font-weight:600}
+h3.mini{margin:0 0 8px;font-size:.85rem;font-weight:600}
+.mini-sub{font-weight:400;color:var(--muted);font-size:.78rem}
+.bufgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(122px,1fr));gap:8px}
+.bcell{border:1.5px solid var(--ink);border-radius:4px;background:var(--panel);font-size:.72rem;position:relative;min-height:74px}
+.bcell.free{border-style:dashed;border-color:var(--line);color:var(--muted)}
+.bcell .bh{display:flex;justify-content:space-between;padding:3px 7px;border-bottom:1px solid var(--line);color:var(--muted);font-size:.66rem}
+.bcell .bb{padding:5px 7px}
+.bcell .tag{font-family:var(--mono);font-weight:500;word-break:break-all}
+.bcell .meta{display:flex;justify-content:space-between;align-items:center;margin-top:5px}
+.pips{display:flex;gap:2px}
+.pips i{width:7px;height:7px;border-radius:50%;border:1px solid var(--accent)}
+.pips i.on{background:var(--accent)}
+.dirty{font-size:.62rem;color:var(--amber);font-weight:600}
+.bcell.dirtyb{border-color:var(--amber);background:var(--amber-soft)}
+.hand{position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);font-size:.6rem;background:var(--ink);color:var(--panel);border-radius:3px;padding:0 5px;line-height:15px;white-space:nowrap}
+.btag{position:absolute;top:-8px;left:6px;font-size:.58rem;border-radius:3px;padding:0 5px;line-height:15px;background:var(--accent);color:var(--panel)}
+.btag.read,.btag.new{background:var(--live)} .btag.evict{background:var(--amber)} .btag.flushed{background:var(--live)}
+.shm-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-top:18px}
+@media (max-width:700px){.shm-row{grid-template-columns:minmax(0,1fr)}}
+table.proc{border-collapse:collapse;font-size:.76rem;width:100%}
+table.proc th{text-align:left;font-weight:500;color:var(--muted);border-bottom:1px solid var(--line);padding:2px 6px 2px 0}
+table.proc td{padding:3px 6px 3px 0;font-family:var(--mono)}
+.disk{margin-top:16px}
+.diskrow{display:grid;grid-template-columns:150px 1fr;gap:10px;align-items:center;margin-bottom:6px}
+.diskrow .rn{font-family:var(--mono);font-size:.72rem;word-break:break-all}
+.blocks{display:flex;gap:4px;flex-wrap:wrap}
+.blk{width:30px;height:24px;border:1.5px solid var(--line);border-radius:3px;font-family:var(--mono);font-size:.66rem;display:flex;align-items:center;justify-content:center;color:var(--muted);background:var(--panel2)}
+.blk.cached{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.blk.dirty{border-color:var(--amber);color:var(--amber);background:var(--amber-soft)}
+.disk-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.72rem;color:var(--muted);margin-top:6px}
+.disk-legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px;border:1.5px solid}
+
+
+/* ================= series layout ================= */
+.masthead{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--line)}
+.top-in{max-width:1600px;margin:0 auto;padding:12px 20px;display:flex;flex-wrap:wrap;gap:10px 24px;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.brand b{font-size:1.25rem;font-weight:700;letter-spacing:-.01em}
+.brand span{color:var(--muted);font-size:.9rem}
+.toggles{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.toggles .lbl{font-size:.82rem;color:var(--muted);margin-right:2px}
+.tog{border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:4px 11px;font-size:.8rem;cursor:pointer;color:var(--muted)}
+.tog[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:500}
+.tog-reset{border:0;background:none;color:var(--muted);font-size:.78rem;text-decoration:underline;cursor:pointer;padding:4px}
+.app{max-width:1600px;margin:0 auto;padding:18px 20px 60px;display:grid;grid-template-columns:220px 380px minmax(0,1fr);gap:22px;align-items:start}
+.toc{position:sticky;top:76px;max-height:calc(100vh - 96px);overflow:auto;padding-right:4px}
+.toc h3{font-size:.8rem;font-weight:600;color:var(--muted);margin:14px 0 4px}
+.toc h3:first-child{margin-top:0}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc a{display:flex;gap:9px;align-items:center;padding:5px 8px;border-radius:7px;color:var(--ink);text-decoration:none;font-size:.9rem}
+.toc a:hover{background:var(--panel)}
+.toc a[aria-current="true"]{background:var(--panel);box-shadow:inset 3px 0 0 var(--accent);font-weight:600}
+.num{flex:none;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:.7rem;font-family:var(--mono);color:var(--muted);background:var(--panel)}
+.done .num{background:var(--live);border-color:var(--live);color:var(--panel)}
+.toc-select{display:none}
+.story{position:sticky;top:76px;max-height:calc(100vh - 96px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px 22px 18px}
+.kicker{font-size:.82rem;color:var(--muted);margin:0 0 4px}
+.story h1{margin:0 0 12px;font-size:1.75rem;line-height:1.15;letter-spacing:-.015em}
+.dots{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px}
+.dots button{width:18px;height:6px;border-radius:3px;border:0;background:var(--line);cursor:pointer;padding:0}
+.dots button.on{background:var(--accent)}
+.dots button.cur{background:var(--ink)}
+.prose{font-size:1.06rem;line-height:1.68;margin:0 0 16px;max-width:52ch}
+.prose code,.code-ran code{font-family:var(--mono);font-size:.88em;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+.ran{margin:0 0 16px}
+.ran .who{font-size:.8rem;color:var(--muted);margin-bottom:4px}
+.ran pre{margin:0;font-family:var(--mono);font-size:.82rem;line-height:1.5;background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:6px;padding:8px 10px;white-space:pre-wrap;word-break:break-word}
+.nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.nav .btn{padding:8px 16px;font-size:.92rem}
+.nav .keys{margin-left:auto;font-size:.75rem;color:var(--muted)}
+.stage{display:flex;flex-direction:column;gap:18px;min-width:0}
+.panel>h2{font-size:1.02rem}
+.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.rcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.rcard.active{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.rhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.rhead b{font-size:.95rem}
+.rhead .snap{margin-left:auto;font-family:var(--mono);font-size:.72rem;color:var(--muted)}
+.earlier{font-family:var(--mono);font-size:.72rem;color:var(--muted);margin-bottom:6px;line-height:1.5}
+.earlier div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rcmd{font-family:var(--mono);font-size:.8rem;margin-bottom:6px;word-break:break-word}
+.rout{font-family:var(--mono);font-size:.78rem;overflow-x:auto}
+.rout table{border-collapse:collapse}
+.rout th,.rout td{padding:1px 14px 1px 0;text-align:left;white-space:nowrap}
+.rout th{color:var(--muted);font-weight:500;border-bottom:1px solid var(--line)}
+.rout .ok{color:var(--muted)} .rout .warn{color:var(--amber);white-space:pre-wrap;font-family:var(--sans);font-size:.84rem} .rout .err{color:var(--dead);white-space:pre-wrap}
+.rout .hint{color:var(--muted);font-family:var(--sans);font-size:.8rem;white-space:pre-wrap;margin-top:3px}
+.rplan{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.rplan span{font-size:.72rem;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 7px;color:var(--muted)}
+.rplan span.plan{font-family:var(--mono);color:var(--accent)}
+.rempty{color:var(--muted);font-size:.85rem}
+.focus{outline:3px solid var(--amber)!important;outline-offset:2px;border-radius:4px}
+@media (prefers-reduced-motion: no-preference){.focus{animation:pulse 1.6s ease-in-out 2}}
+@keyframes pulse{50%{outline-color:transparent}}
+.vm-badge{font-size:.62rem;font-family:var(--sans);border-radius:3px;padding:0 5px;background:var(--live-soft);color:var(--live);border:1px solid var(--live);margin-left:6px}
+.ff-note{font-size:.66rem;color:var(--amber);font-family:var(--sans)}
+.sb-free.reserved{background:repeating-linear-gradient(135deg,var(--amber-soft) 0 4px,transparent 4px 8px);color:var(--amber)}
+.mobile-nav{display:none}
+@media (max-width:1250px){.app{grid-template-columns:340px minmax(0,1fr)} .toc{display:none} .toc-select{display:block;width:100%;margin-bottom:12px;font-size:.9rem;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel2)}}
+@media (max-width:860px){
+  .app{grid-template-columns:minmax(0,1fr);padding-bottom:90px}
+  .story{position:static;max-height:none}
+  .story .nav{display:none}
+  .mobile-nav{display:flex;gap:8px;position:fixed;left:0;right:0;bottom:0;z-index:30;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));background:var(--panel);border-top:1px solid var(--line)}
+  .mobile-nav .btn{flex:1;padding:10px;font-size:.95rem}
+  .masthead{position:static}
+}
+
+
+/* ================= contents page ================= */
+.brand a{color:inherit;text-decoration:none}
+.brand a:hover{color:var(--accent)}
+.contents-link{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:5px 12px;font-size:.85rem;cursor:pointer;color:var(--ink)}
+.contents-link:hover{border-color:var(--accent)}
+.home{max-width:1120px;margin:0 auto;padding:40px 20px 80px}
+.home[hidden],.app[hidden]{display:none}
+.hero{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:32px;align-items:center;margin-bottom:44px}
+@media (max-width:820px){.hero{grid-template-columns:minmax(0,1fr)}}
+.hero h1{margin:0 0 14px;font-size:clamp(2rem,4.5vw,3rem);line-height:1.05;letter-spacing:-.025em}
+.hero p{font-size:1.1rem;line-height:1.65;color:var(--muted);margin:0 0 20px;max-width:56ch}
+.hero .cta{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.hero .cta .btn{padding:10px 18px;font-size:1rem}
+.progress-line{font-size:.85rem;color:var(--muted);margin-top:14px;display:flex;align-items:center;gap:10px}
+.pbar{width:140px;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.pbar i{display:block;height:100%;background:var(--live)}
+.hero-art{background:var(--panel);border:1.5px solid var(--ink);border-radius:6px;overflow:hidden;font-family:var(--mono);font-size:.72rem}
+.hero-art .ha-head{display:flex;justify-content:space-between;padding:7px 10px;border-bottom:1px solid var(--line);font-family:var(--sans);font-size:.85rem}
+.hero-art .ha-head span{color:var(--muted);font-size:.75rem}
+.hero-art .ha-bar{display:flex;height:34px;border-bottom:1.5px solid var(--ink)}
+.hero-art .ha-bar>div{display:flex;align-items:center;justify-content:center;border-right:1px solid var(--line)}
+.hero-art .ha-rows{padding:10px;display:flex;flex-direction:column;gap:6px}
+.hero-art .ha-row{display:grid;grid-template-columns:38px 1fr;gap:6px}
+.hero-art .ha-row .lpn{font-size:.68rem}
+.hero-art .tuple{font-size:.72rem}
+.module{display:grid;grid-template-columns:240px minmax(0,1fr);gap:24px;padding:26px 0;border-top:1px solid var(--line)}
+@media (max-width:820px){.module{grid-template-columns:minmax(0,1fr);gap:12px}}
+.module h2{margin:0 0 6px;font-size:1.25rem;letter-spacing:-.01em}
+.module p{margin:0;color:var(--muted);font-size:.92rem;line-height:1.55}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.card{display:flex;flex-direction:column;gap:6px;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;cursor:pointer;color:var(--ink);text-decoration:none;transition:border-color .15s, transform .15s}
+.card:hover{border-color:var(--accent);transform:translateY(-1px)}
+.card .ct{display:flex;align-items:center;gap:10px}
+.card .ct b{font-size:1.02rem}
+.card .cb{font-size:.9rem;line-height:1.5;color:var(--muted)}
+.card .tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
+.card .tags span{font-size:.7rem;font-family:var(--mono);color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:1px 6px}
+.card .cm{font-size:.75rem;color:var(--muted);margin-top:auto;padding-top:4px;display:flex;justify-content:space-between}
+.card.done .num{background:var(--live);border-color:var(--live);color:var(--panel)}
+.card.resume{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+
+/* ================= site home ================= */
+.logo{display:flex;align-items:center;gap:9px;text-decoration:none;color:var(--ink)}
+.crumb{font-size:.92rem;color:var(--muted)}
+.crumb a{color:var(--muted);text-decoration:none}.crumb a:hover{color:var(--accent)}
+.site-hero{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:40px;align-items:center;margin-bottom:56px}
+@media (max-width:860px){.site-hero{grid-template-columns:minmax(0,1fr)}}
+.site-hero .kick{font-family:var(--mono);font-size:.9rem;color:var(--accent);margin:0 0 12px}
+.site-hero h1{margin:0 0 18px;font-family:var(--display);font-size:clamp(2.4rem,5.5vw,4.4rem);line-height:.98;letter-spacing:-.01em}
+.site-hero p.lede{font-family:var(--prose);font-size:1.15rem;line-height:1.65;color:var(--muted);margin:0 0 24px;max-width:54ch}
+.site-hero .cta{display:flex;flex-wrap:wrap;gap:10px}
+.site-hero .cta .btn{padding:12px 20px;font-size:1rem}
+.sec-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px;margin:0 0 16px}
+.sec-head h2{margin:0;font-family:var(--display);font-size:1.7rem}
+.sec-head span{font-size:.9rem;color:var(--muted)}
+.plates{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;margin-bottom:56px}
+.plate{display:flex;flex-direction:column;border:1.5px solid var(--ink);background:var(--panel);color:var(--ink);text-decoration:none;border-radius:var(--r);min-height:230px}
+a.plate:hover{border-color:var(--accent)}
+.plate.soon{border:1.5px dashed var(--line);background:transparent}
+.plate .pb{padding:20px 22px;flex:1;display:flex;flex-direction:column;gap:10px}
+.plate .pt{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.plate .pt b{font-family:var(--display);font-size:1.6rem;line-height:1.1}
+.plate .status{font-family:var(--mono);font-size:.75rem;padding:3px 8px;border-radius:4px;white-space:nowrap}
+.plate .status.live{background:var(--accent);color:var(--on-accent)}
+.plate .status.soon{border:1px solid var(--line);color:var(--muted)}
+.plate .pd{font-family:var(--prose);font-size:.98rem;line-height:1.55;color:var(--muted);margin:0}
+.plate .ptags{display:flex;flex-wrap:wrap;gap:5px;margin-top:auto}
+.plate .ptags span{font-family:var(--mono);font-size:.72rem;color:var(--ink);border:1px solid var(--line);border-radius:3px;padding:1px 7px}
+.plate.soon .ptags span{color:var(--muted)}
+.plate .pf{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1.5px solid var(--ink);font-family:var(--mono);font-size:.74rem}
+.plate.soon .pf{border-top:1.5px dashed var(--line);color:var(--muted)}
+.plate .pf span{padding:9px 12px;border-right:1px solid var(--line)}
+.plate .pf span:last-child{border-right:0}
+.plate .pf .acc{color:var(--accent)}
+.how{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-bottom:24px}
+.how div{border-top:1.5px solid var(--accent);padding-top:12px}
+.how b{display:block;font-family:var(--display);font-size:1.1rem;margin-bottom:6px}
+.how p{margin:0;color:var(--muted);font-family:var(--prose);line-height:1.6}
+.site-hero a.btn{color:var(--ink);text-decoration:none;display:inline-flex;align-items:center}
+.plate.soon .pf{grid-template-columns:minmax(0,1fr)}
+.back-link{display:inline-block;font-size:.9rem;color:var(--muted);text-decoration:none;margin-bottom:18px}
+.back-link:hover{color:var(--accent)}
+:root[data-skin="blueprint"] .plate .pt b,:root[data-skin="blueprint"] .site-hero h1,:root[data-skin="blueprint"] .sec-head h2,:root[data-skin="blueprint"] .how b,:root[data-skin="blueprint"] .logo b{font-stretch:78%;font-weight:800}
+:root[data-skin="blueprint"] .plate:not(.soon),:root[data-skin="blueprint"] .plate:not(.soon) .pf{border-color:#D6E6F5}
+
+/* ================= themes ================= */
+.story h1,.hero h1,.module h2,.brand b,.card .ct b,.panel>h2{font-family:var(--display)}
+.prose,.hero p,.module p,.card .cb{font-family:var(--prose)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 5px 0 10px;vertical-align:-1px}
+.sw:first-child{margin-left:0}
+:root[data-skin] .seg button[aria-pressed="true"],:root[data-skin] .btn.primary,:root[data-skin] .touch-tag,:root[data-skin] .ie.hit,:root[data-skin] .btag,:root[data-skin] .badge.solid,:root[data-skin] .lprow.redirect .lpn,:root[data-skin] .sb-lp.redirect,:root[data-skin] .done .num,:root[data-skin] .card.done .num{color:var(--on-accent)}
+:root[data-skin] .sb-t{color:var(--panel)}
+:root[data-skin] .panel,:root[data-skin] .story,:root[data-skin] .rcard,:root[data-skin] .card{border-radius:var(--r)}
+
+/* Blueprint: navy drafting paper, pale linework, orange callouts */
+:root[data-skin="blueprint"]{
+  --bg:#0E2A46; --panel:#0B233C; --panel2:#12304F; --ink:#F5F9FD; --muted:#C5D8EB; --line:#3A6890;
+  --accent:#FFB061; --accent-soft:#3A2B1A; --on-accent:#0B233C;
+  --live:#9EDCFF; --live-soft:#10304E; --dead:#FF9C8C; --dead-soft:#3A2230;
+  --amber:#F7DA7A; --amber-soft:#33301A; --grey:#9AB0C4; --grey-soft:#16314C;
+  --sans:Archivo, "Helvetica Neue", sans-serif; --display:Archivo, sans-serif; --prose:Archivo, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, Menlo, monospace; --r:2px;
+}
+:root[data-skin="blueprint"] body{background-color:#0E2A46;background-image:linear-gradient(rgba(207,227,245,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(207,227,245,.055) 1px,transparent 1px);background-size:24px 24px;font-weight:450}
+:root[data-skin="blueprint"] .masthead{background:#0E2A46}
+:root[data-skin="blueprint"] .story h1,:root[data-skin="blueprint"] .hero h1,:root[data-skin="blueprint"] .brand b,:root[data-skin="blueprint"] .module h2{font-stretch:78%;font-weight:800;letter-spacing:0}
+:root[data-skin="blueprint"] .page,:root[data-skin="blueprint"] .node,:root[data-skin="blueprint"] .hero-art{border-color:#D6E6F5}
+:root[data-skin="blueprint"] .prose{color:#F5F9FD;font-weight:450}
+:root[data-skin="blueprint"] .tuple .hdrs,:root[data-skin="blueprint"] .tuple .data,:root[data-skin="blueprint"] .rout,:root[data-skin="blueprint"] .ran pre,:root[data-skin="blueprint"] .ie{font-weight:500}
+:root[data-skin="blueprint"] .tuple{font-size:.78rem}
+:root[data-skin="blueprint"] .tuple .state,:root[data-skin="blueprint"] .slotcap,:root[data-skin="blueprint"] .page-head span,:root[data-skin="blueprint"] .node .nh{font-size:.72rem;font-weight:500}
+:root[data-skin="blueprint"] .touch-tag,:root[data-skin="blueprint"] .btag{font-size:.66rem;font-weight:700}
+:root[data-skin="blueprint"] .lpn{font-size:.74rem;font-weight:600}
+:root[data-skin="blueprint"] .slotbar{font-size:.68rem;font-weight:600}
+:root[data-skin="blueprint"] .sub,:root[data-skin="blueprint"] .kicker,:root[data-skin="blueprint"] .toc h3,:root[data-skin="blueprint"] .mini-sub,:root[data-skin="blueprint"] .rplan span{color:#C5D8EB}
+:root[data-skin="blueprint"] .toc a{color:#F5F9FD}
+:root[data-skin="blueprint"] .tog{color:#C5D8EB}
+:root[data-skin="blueprint"] .tuple.dead .data,:root[data-skin="blueprint"] .tuple.aborted .data{color:#E8EEF5}
+
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header class="masthead"><div class="top-in">
+  <div class="brand"><a href="#" id="home-link" class="logo"><svg width="26" height="26" viewBox="0 0 34 34" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="28" height="28"/><path d="M3 17h14v14"/><path d="M17 17l14-14" stroke="var(--accent)"/></svg><b>Tech, Blueprinted</b></a><span class="crumb" id="crumb"></span><button class="contents-link" id="contents-btn">All Postgres tours</button></div>
+  <div style="display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center"><div class="toggles" id="toggles"></div></div>
+</div></header>
+<main class="home" id="site" hidden></main>
+<main class="home" id="home" hidden></main>
+<div class="app" id="app">
+  <nav class="toc" id="toc" aria-label="Tours"></nav>
+  <section class="story" id="story" aria-live="polite"></section>
+  <section class="stage" id="stage"></section>
+</div>
+<div class="mobile-nav" id="mnav"></div>
+<script>
+// ===== Mini Postgres engine (simulator) v2: HOT, shared buffers, TOAST =====
+const COLS = ['id', 'name', 'balance', 'notes'];
+const SYS_COLS = ['ctid', 'xmin', 'xmax'];
+const TABLE = 'accounts';
+const PAGE_CAP = 4;          // tuples per page in this lab
+const MAX_LP = 8;            // line pointers per page in this lab
+const TOAST_THRESHOLD = 2032; // bytes, same as real Postgres with 8 KB pages
+const CHUNK = 1996;           // TOAST_MAX_CHUNK_SIZE for 8 KB pages
+const TOAST_REL = 'pg_toast_16384';
+const TOAST_IDX = 'pg_toast_16384_index';
+
+function tidStr(t) { return `(${t.p},${t.lp})`; }
+function tidKey(t) { return t.p + ':' + t.lp; }
+function tkey(rel, t) { return rel + '|' + t.p + ':' + t.lp; }
+
+class Session {
+  constructor(name) {
+    this.name = name;
+    this.inTx = false; this.xid = null; this.snapshot = null;
+    this.iso = 'READ COMMITTED'; this.txIso = null;
+    this.failed = false;
+    this.enableIndexScan = true; this.enableSeqScan = true;
+    this.log = []; this.history = [];
+  }
+}
+
+class SimError extends Error { constructor(msg, opts = {}) { super(msg); this.fatal = opts.fatal !== false; this.hint = opts.hint; this.kind = opts.kind || 'error'; } }
+
+class MiniPG {
+  constructor(nBuffers = 8) { this.nBuffers = nBuffers; this.reset(true); }
+
+  reset(seed = true) {
+    _rng = 12345;
+    this.fillfactor = 100;
+    this.hasNotes = false;
+    this.nextXid = 100;
+    this.nextOid = 16400;
+    this.clog = {};
+    this.heap = { name: TABLE, pages: [] };
+    this.toast = { name: TOAST_REL, pages: [] };
+    this.indexes = {};
+    const keepIso = this.sessions ? { A: this.sessions.A.iso, B: this.sessions.B.iso } : null;
+    this.sessions = { A: new Session('A'), B: new Session('B') };
+    if (keepIso) { this.sessions.A.iso = keepIso.A; this.sessions.B.iso = keepIso.B; }
+    this.initBuffers(this.nBuffers);
+    this.clearTouch();
+    this.trace = null;
+    if (seed) {
+      this.quiet = true;
+      const x = this.nextXid++;
+      this.clog[x] = 'committed';
+      [[1, 'alice', 100], [2, 'bob', 200], [3, 'carol', 300]].forEach(([id, name, balance]) => this.insertRow({ id, name, balance, notes: null }, x, null));
+      this.heap.pages.forEach(pg => pg.lps.forEach(l => { l.tuple.hints.xminC = true; }));
+      this.quiet = false;
+      this.trace = { session: null, sql: 'seed', plan: 'Setup', steps: [{ text: `Transaction ${x} inserted 3 rows and committed. Everything is on disk and shared buffers are empty, as if the server just started. Run a statement to see its execution trace here.` }], stats: null };
+    }
+  }
+
+  clearTouch() { this.pinned = -1; this.touched = {}; this.touchedIdx = {}; this.touchedBuf = {}; this.bufStats = { hit: 0, read: 0, dirtied: 0, written: 0, extended: 0 }; }
+
+  // ---------- shared buffers ----------
+  initBuffers(n) { this.nBuffers = n; this.buffers = Array(n).fill(null); this.hand = 0; }
+
+  bufFind(key) { return this.buffers.findIndex(b => b && b.key === key); }
+
+  bufAccess(rel, blk, steps, opts = {}) {
+    if (this.quiet) return -1;
+    const key = rel + '/' + blk, st = this.bufStats;
+    let i = this.bufFind(key);
+    if (i >= 0) {
+      const b = this.buffers[i];
+      b.usage = Math.min(5, b.usage + 1); st.hit++;
+      if (!this.touchedBuf[i]) this.touchedBuf[i] = 'hit';
+      if (steps) steps.push({ text: `shared buffers: hit on ${key} in buffer ${i} (usage count → ${b.usage})`, sub: true, buf: true });
+    } else {
+      i = this.bufVictim(steps);
+      this.buffers[i] = { key, rel, blk, dirty: false, usage: 1 };
+      if (opts.extend) { st.extended++; if (steps) steps.push({ text: `shared buffers: ${key} is a brand-new block (relation extended), placed in buffer ${i} without reading disk`, sub: true, buf: true }); }
+      else { st.read++; if (steps) steps.push({ text: `shared buffers: miss on ${key} → read it from disk into buffer ${i}`, sub: true, buf: true }); }
+      this.touchedBuf[i] = opts.extend ? 'new' : 'read';
+    }
+    this.pinned = i;
+    if (opts.dirty) this.bufDirty(i, steps);
+    return i;
+  }
+
+  bufDirty(i, steps) {
+    const b = this.buffers[i];
+    if (b && !b.dirty) { b.dirty = true; this.bufStats.dirtied++; if (steps) steps.push({ text: `shared buffers: ${b.key} is now dirty (changed in memory, disk copy is stale)`, sub: true, buf: true }); }
+    if (b && this.touchedBuf[i] !== 'read') this.touchedBuf[i] = this.touchedBuf[i] || 'hit';
+  }
+
+  markDirtyKey(key, steps) { if (this.quiet) return; const i = this.bufFind(key); if (i >= 0) this.bufDirty(i, steps); }
+
+  bufVictim(steps) {
+    const free = this.buffers.findIndex(b => !b);
+    if (free >= 0) return free;
+    const swept = [];
+    for (let guard = 0; guard < 10000; guard++) {
+      const i = this.hand; this.hand = (this.hand + 1) % this.nBuffers;
+      const b = this.buffers[i];
+      if (i === this.pinned) continue; // pinned: the page this backend is still holding
+      if (b.usage > 0) { b.usage--; swept.push(i); continue; }
+      const pinNote = this.pinned >= 0 && this.buffers[this.pinned] ? `, skipping buffer ${this.pinned} because it is pinned (still in use)` : '';
+      const sw = swept.length ? `clock hand lowered usage counts ${swept.length} time${swept.length > 1 ? 's' : ''} as it swept${pinNote}, then ` : `clock hand${pinNote} `;
+      if (b.dirty) { this.bufStats.written++; if (steps) steps.push({ text: `shared buffers: no free buffer; ${sw}found buffer ${i} (${b.key}) at usage 0. It is dirty, so it must be written to disk before reuse.`, sub: true, buf: true, verdict: 'evict' }); }
+      else if (steps) steps.push({ text: `shared buffers: no free buffer; ${sw}found buffer ${i} (${b.key}) at usage 0, clean, evicted`, sub: true, buf: true, verdict: 'evict' });
+      this.buffers[i] = null;
+      return i;
+    }
+  }
+
+  checkpoint(steps) {
+    let n = 0;
+    this.buffers.forEach((b, i) => { if (b && b.dirty) { b.dirty = false; n++; this.bufStats.written++; this.touchedBuf[i] = 'flushed'; if (steps) steps.push({ text: `buffer ${i}: wrote ${b.key} to disk`, sub: true, verdict: 'ok' }); } });
+    return n;
+  }
+
+  restart(n) {
+    const steps = [];
+    const flushed = this.checkpoint(null);
+    const aborted = this.activeXids();
+    aborted.forEach(x => this.clog[x] = 'aborted');
+    Object.values(this.sessions).forEach(s => {
+      const was = s.inTx;
+      s.inTx = false; s.xid = null; s.snapshot = null; s.failed = false; s.txIso = null;
+      s.log.push({ type: 'warn', text: `server restarted with shared_buffers = ${n}${was ? '; this session\'s open transaction was rolled back' : ''}` });
+    });
+    this.initBuffers(n);
+    this.clearTouch();
+    steps.push({ text: `shutdown checkpoint wrote ${flushed} dirty buffer${flushed === 1 ? '' : 's'} to disk` });
+    if (aborted.length) steps.push({ text: `in-progress xid${aborted.length > 1 ? 's' : ''} ${aborted.join(', ')} marked aborted` });
+    steps.push({ text: `shared memory re-created with ${n} empty buffers. The cache is cold again.` });
+    this.trace = { session: null, sql: 'restart', plan: `Server restart (shared_buffers = ${n})`, steps, stats: null };
+  }
+
+  // ---------- transaction status ----------
+  status(xid) { return this.clog[xid] || 'in progress'; }
+  activeXids() { return Object.keys(this.clog).filter(x => this.clog[x] === 'in progress').map(Number); }
+  takeSnapshot(sess) {
+    const active = this.activeXids();
+    return { xmin: Math.min(this.nextXid, ...active), xmax: this.nextXid, xip: active.filter(x => x !== sess.xid).sort((a, b) => a - b) };
+  }
+  snapStr(s) { return s ? `${s.xmin}:${s.xmax}:${s.xip.join(',')}` : '—'; }
+  committedInSnap(xid, snap) { return this.status(xid) === 'committed' && xid < snap.xmax && !snap.xip.includes(xid); }
+  horizon() {
+    const snapXmins = Object.values(this.sessions).filter(s => s.inTx && s.snapshot).map(s => s.snapshot.xmin);
+    return Math.min(this.nextXid, ...this.activeXids(), ...snapXmins);
+  }
+  deadToAll(t, h) {
+    const xs = this.status(t.xmin);
+    if (xs === 'aborted') return true;
+    return xs === 'committed' && !!t.xmax && this.status(t.xmax) === 'committed' && t.xmax < h;
+  }
+
+  xidStatusWithHints(t, which, steps, setHints) {
+    const xid = t[which], h = t.hints;
+    const C = which === 'xmin' ? 'xminC' : 'xmaxC', A = which === 'xmin' ? 'xminA' : 'xmaxA';
+    if (h[C]) return 'committed';
+    if (h[A]) return 'aborted';
+    const st = this.status(xid);
+    if (setHints && st !== 'in progress') {
+      h[st === 'committed' ? C : A] = true;
+      if (steps) steps.push({ text: `  looked up xid ${xid} in pg_xact → ${st}; set hint bit ${which.toUpperCase()}_${st === 'committed' ? 'COMMITTED' : 'INVALID'} on the tuple (a read just dirtied the page)`, sub: true });
+      this.markDirtyKey(t.rel + '/' + t.pg, steps);
+    }
+    return st;
+  }
+
+  visibility(t, snap, sess, steps = null, setHints = true) {
+    const me = sess ? sess.xid : null;
+    const R = (visible, why) => ({ visible, why });
+    if (me != null && t.xmin === me) {
+      if (t.xmax === me) return R(false, `inserted and then deleted/updated by my own transaction ${me}`);
+      return R(true, `inserted by my own transaction ${me}`);
+    }
+    const xs = this.xidStatusWithHints(t, 'xmin', steps, setHints);
+    if (xs === 'aborted') return R(false, `xmin ${t.xmin} aborted → this insert never happened`);
+    if (!this.committedInSnap(t.xmin, snap)) return R(false, xs === 'in progress' ? `xmin ${t.xmin} is still in progress` : `xmin ${t.xmin} committed after my snapshot was taken`);
+    if (!t.xmax) return R(true, `xmin ${t.xmin} committed before my snapshot, xmax empty`);
+    if (me != null && t.xmax === me) return R(false, `deleted/updated by my own transaction ${me}`);
+    const ys = this.xidStatusWithHints(t, 'xmax', steps, setHints);
+    if (ys === 'aborted') return R(true, `xmin ${t.xmin} committed; xmax ${t.xmax} aborted → the delete never happened`);
+    if (!this.committedInSnap(t.xmax, snap)) return R(true, `xmin ${t.xmin} committed; xmax ${t.xmax} ${ys === 'in progress' ? 'still in progress' : 'committed after my snapshot'} → I still see this version`);
+    return R(false, `xmax ${t.xmax} committed before my snapshot → this version is dead to me`);
+  }
+
+  tupleState(t) {
+    const xs = this.status(t.xmin);
+    if (xs === 'aborted') return 'aborted';
+    if (xs === 'in progress') return 'uncommitted';
+    if (!t.xmax) return 'live';
+    const ys = this.status(t.xmax);
+    if (ys === 'aborted') return 'live';
+    if (ys === 'in progress') return 'locked';
+    return 'dead';
+  }
+
+  // ---------- page storage ----------
+  insertCap() { return Math.max(1, Math.floor(PAGE_CAP * this.fillfactor / 100)); }
+  pageSlot(pg, cap = PAGE_CAP) {
+    const stored = pg.lps.filter(l => l.state === 'normal').length;
+    if (stored >= cap) return null;
+    const u = pg.lps.findIndex(l => l.state === 'unused');
+    if (u >= 0) return { p: pg.id, lp: u + 1, reuse: true };
+    if (pg.lps.length < MAX_LP) return { p: pg.id, lp: pg.lps.length + 1, reuse: false };
+    return null;
+  }
+
+  findSlot(rel, prefer, onlyPrefer = false) {
+    const cap = rel === this.heap ? this.insertCap() : PAGE_CAP;
+    if (prefer != null && rel.pages[prefer]) { const s = this.pageSlot(rel.pages[prefer], cap); if (s || onlyPrefer) return s; }
+    for (const pg of rel.pages) { const s = this.pageSlot(pg, cap); if (s) return s; }
+    const pg = { id: rel.pages.length, lps: [], allVisible: false };
+    rel.pages.push(pg);
+    return { p: pg.id, lp: 1, reuse: false, newPage: true };
+  }
+
+  getLp(rel, tid) { const pg = rel.pages[tid.p]; return pg ? pg.lps[tid.lp - 1] : null; }
+  getTuple(rel, tid) { const lp = this.getLp(rel, tid); return lp && lp.state === 'normal' ? lp.tuple : null; }
+
+  placeTuple(rel, tuple, slot, steps, label) {
+    const tid = { p: slot.p, lp: slot.lp };
+    tuple.ctid = { ...tid }; tuple.rel = rel.name; tuple.pg = slot.p;
+    const pg = rel.pages[slot.p];
+    if (rel === this.heap) this.clearVM(slot.p, steps);
+    if (slot.reuse) pg.lps[slot.lp - 1] = { state: 'normal', tuple };
+    else pg.lps.push({ state: 'normal', tuple });
+    this.bufAccess(rel.name, slot.p, steps, { dirty: true, extend: !!slot.newPage });
+    if (steps && label) steps.push({ text: label(tid, slot), tid, rel: rel.name, verdict: 'new' });
+    this.touched[tkey(rel.name, tid)] = 'new';
+    return tid;
+  }
+
+  clearVM(p, steps) {
+    const pg = this.heap.pages[p];
+    if (pg && pg.allVisible) { pg.allVisible = false; if (steps && !this.quiet) steps.push({ text: `visibility map: page ${p} is no longer all-visible (it was just changed)`, verdict: 'vm' }); }
+  }
+
+  // ---------- TOAST ----------
+  tupleBase(d) { return 24 + 4 + (d.name == null ? 0 : varlena(d.name)) + 4; }
+  tupleSize(t) { return this.tupleBase(t.data) + (t.toast ? t.toast.stored : 0); }
+
+  toastValue(d, xid, steps) {
+    const v = d.notes;
+    if (v == null) return { mode: 'null', stored: 0 };
+    const base = this.tupleBase(d), raw = v.length;
+    if (base + varlena(v) <= TOAST_THRESHOLD) return { mode: 'inline', raw, stored: varlena(v) };
+    const comp = estimateCompressed(v);
+    if (steps) steps.push({ text: `TOAST: row would be ${base + varlena(v)} B, over the ${TOAST_THRESHOLD} B threshold → try compressing notes first`, head: true });
+    if (comp != null && base + comp + 4 <= TOAST_THRESHOLD) {
+      if (steps) steps.push({ text: `notes compresses ${raw} B → ${comp} B (pglz). Row now fits, so the compressed value stays inline. Nothing goes to ${TOAST_REL}.`, sub: true });
+      return { mode: 'compressed', raw, comp, stored: comp + 4 };
+    }
+    const payload = comp != null ? comp : raw;
+    if (steps) steps.push({ text: comp != null ? `compressed to ${comp} B, still too big → move it out of line` : `notes barely compresses (random data), so compression is skipped → move it out of line`, sub: true });
+    const chunkId = this.nextOid++;
+    const n = Math.ceil(payload / CHUNK);
+    const tids = [];
+    if (!this.quiet) this.bufAccess(TOAST_IDX, 0, steps, { dirty: true, extend: this.toast.pages.length === 0 });
+    for (let s = 0; s < n; s++) {
+      const size = Math.min(CHUNK, payload - s * CHUNK);
+      const slot = this.findSlot(this.toast, null);
+      const tuple = { xmin: xid, xmax: 0, data: { chunk_id: chunkId, chunk_seq: s, size }, hints: {} };
+      tids.push(this.placeTuple(this.toast, tuple, slot, steps, tid => `${TOAST_REL} insert → ${tidStr(tid)}: chunk_id ${chunkId}, chunk_seq ${s}, ${size} B, xmin=${xid}`));
+    }
+    if (steps) steps.push({ text: `heap tuple keeps an 18-byte TOAST pointer (chunk_id ${chunkId}, ${n} chunk${n > 1 ? 's' : ''}) instead of the ${payload} B value`, sub: true });
+    return { mode: 'external', raw, comp, payload, chunkId, nChunks: n, tids, stored: 18 };
+  }
+
+  toastDelete(toast, xid, steps, why) {
+    if (!toast || toast.mode !== 'external') return;
+    for (const tid of toast.tids) {
+      const t = this.getTuple(this.toast, tid);
+      if (!t) continue;
+      t.xmax = xid; delete t.hints.xmaxC; delete t.hints.xmaxA;
+      this.bufAccess(TOAST_REL, tid.p, steps, { dirty: true });
+      this.touched[tkey(TOAST_REL, tid)] = 'del';
+    }
+    if (steps) steps.push({ text: `${TOAST_REL}: chunk_id ${toast.chunkId} (${toast.nChunks} chunk${toast.nChunks > 1 ? 's' : ''}) got xmax = ${xid}, ${why}. TOAST rows follow MVCC too.`, verdict: 'del' });
+  }
+
+  detoast(tid, t, steps, stats) {
+    const tv = t.toast;
+    if (!tv || tv.mode === 'null' || tv.mode === 'inline') return;
+    if (tv.mode === 'compressed') { steps.push({ text: `${tidStr(tid)}.notes: decompress inline value ${tv.comp} B → ${tv.raw} B`, sub: true }); return; }
+    steps.push({ text: `${tidStr(tid)}.notes is a TOAST pointer → look up chunk_id ${tv.chunkId} in ${TOAST_IDX}, fetch ${tv.nChunks} chunk${tv.nChunks > 1 ? 's' : ''}, reassemble ${tv.payload} B${tv.comp != null ? ', decompress to ' + tv.raw + ' B' : ''}`, verdict: 'toast' });
+    this.bufAccess(TOAST_IDX, 0, steps);
+    const pages = new Set();
+    for (const ct of tv.tids) { pages.add(ct.p); this.touched[tkey(TOAST_REL, ct)] = 'vis'; }
+    for (const p of pages) { this.bufAccess(TOAST_REL, p, steps); stats.toastPages++; }
+  }
+
+  // ---------- inserts ----------
+  insertRow(data, xid, prefer, steps, opts = {}) {
+    const toast = opts.toast || this.toastValue(data, xid, steps);
+    const tuple = { xmin: xid, xmax: 0, data: { ...data }, hints: {}, toast, heapOnly: !!opts.heapOnly, hotUpdated: false };
+    const slot = opts.slot || this.findSlot(this.heap, prefer);
+    const tid = this.placeTuple(this.heap, tuple, slot, steps, (tid, s) => {
+      let where = s.newPage ? `no page had room, so the table was extended with page ${s.p}` : s.reuse ? `reused free line pointer ${s.lp} on page ${s.p}` : `free space on page ${s.p}`;
+      if (prefer != null && s.p !== prefer) where += ` (page ${prefer} had no room)`;
+      return `heap insert → ctid ${tidStr(tid)} [${where}], xmin=${xid}, ${this.tupleSize(tuple)} B${opts.heapOnly ? ', heap-only tuple' : ''}`;
+    });
+    if (!opts.heapOnly) for (const idx of Object.values(this.indexes)) this.indexInsert(idx, idx.cols.map(c => data[c]), tid, steps, data);
+    return { tid, tuple };
+  }
+
+  incOf(idx, data) { const o = {}; (idx.include || []).forEach(c => o[c] = data[c]); return o; }
+  indexInsert(idx, key, tid, steps, data) {
+    const before = this.indexLeaves(idx).length;
+    idx.entries.push({ key, tid: { ...tid }, inc: data ? this.incOf(idx, data) : {} });
+    this.sortIndex(idx);
+    const pos = idx.entries.findIndex(e => e.tid.p === tid.p && e.tid.lp === tid.lp && cmpKey(e.key, key) === 0);
+    const leaf = Math.floor(pos / 4) + 1, after = this.indexLeaves(idx).length;
+    if (steps) steps.push({ text: `index ${idx.name}: insert ${key.length > 1 ? '(' + key.map(fmtVal).join(', ') + ')' : fmtVal(key[0])} → ${tidStr(tid)}${(idx.include || []).length ? ' (+ ' + idx.include.map(c => c + ' ' + fmtVal(data[c])).join(', ') + ')' : ''} into leaf L${leaf}${after > before ? ' (a new leaf page was needed)' : ''}`, sub: true });
+    this.bufAccess(idx.name, 0, steps, { dirty: after > before });
+    this.bufAccess(idx.name, leaf, steps, { dirty: true, extend: after > before && leaf === after });
+  }
+
+  sortIndex(idx) { idx.entries.sort((a, b) => cmpKey(a.key, b.key) || a.tid.p - b.tid.p || a.tid.lp - b.tid.lp); }
+  indexLeaves(idx) {
+    const leaves = [];
+    for (let i = 0; i < idx.entries.length; i += 4) leaves.push(idx.entries.slice(i, i + 4));
+    if (!leaves.length) leaves.push([]);
+    return leaves;
+  }
+
+  // ---------- HOT chains & pruning ----------
+  // follow a HOT chain starting at lp number `start` on page pg
+  chainFrom(pg, start, requireHeapOnly) {
+    const out = [];
+    let cur = start, prevXmax = null, first = true;
+    while (cur) {
+      const l = pg.lps[cur - 1];
+      if (!l || l.state !== 'normal') break;
+      const t = l.tuple;
+      if ((!first || requireHeapOnly) && !t.heapOnly) break;
+      if (prevXmax != null && t.xmin !== prevXmax) break;
+      out.push(cur);
+      if (t.hotUpdated && t.xmax && this.status(t.xmax) !== 'aborted' && t.ctid.p === pg.id) { prevXmax = t.xmax; cur = t.ctid.lp; first = false; }
+      else break;
+    }
+    return out;
+  }
+
+  prunePage(rel, pg, h, steps) {
+    const lps = pg.lps, visited = new Set(), actions = [];
+    const setLp = (n, v) => { lps[n - 1] = v; };
+    lps.forEach((lp, i) => {
+      const n = i + 1;
+      const isRoot = lp.state === 'redirect' || (lp.state === 'normal' && !lp.tuple.heapOnly);
+      if (!isRoot) return;
+      const chain = lp.state === 'redirect' ? this.chainFrom(pg, lp.to, true) : this.chainFrom(pg, n, false);
+      chain.forEach(c => visited.add(c));
+      let k = 0; while (k < chain.length && this.deadToAll(lps[chain[k] - 1].tuple, h)) k++;
+      if (k === 0 && !(lp.state === 'redirect' && chain.length === 0)) return;
+      if (k === chain.length) {
+        chain.forEach(c => { if (c !== n) { setLp(c, { state: 'unused' }); actions.push(`lp ${c} → unused (dead heap-only tuple, nothing points at it)`); } });
+        setLp(n, { state: 'dead' });
+        actions.push(`lp ${n} → dead (${lp.state === 'redirect' ? 'whole HOT chain dead' : chain.length > 1 ? 'whole HOT chain dead' : 'tuple dead to everyone'}); tuple space freed, but an index may still point here, so only VACUUM can mark it unused`);
+      } else {
+        const survivor = chain[k];
+        chain.slice(0, k).forEach(c => { if (c !== n) { setLp(c, { state: 'unused' }); actions.push(`lp ${c} → unused (dead heap-only tuple)`); } });
+        setLp(n, { state: 'redirect', to: survivor });
+        actions.push(`lp ${n} → redirect to lp ${survivor} (index entries point at lp ${n}, so it must stay as a signpost to the live end of the HOT chain)`);
+      }
+    });
+    lps.forEach((lp, i) => {
+      if (lp.state === 'normal' && lp.tuple.heapOnly && !visited.has(i + 1) && this.deadToAll(lp.tuple, h)) {
+        lps[i] = { state: 'unused' }; actions.push(`lp ${i + 1} → unused (orphaned heap-only tuple from an aborted update)`);
+      }
+    });
+    if (steps) {
+      if (actions.length) { steps.push({ text: `prune page ${pg.id} of ${rel.name} (horizon ${h}):`, verdict: 'removed' }); actions.forEach(a => steps.push({ text: '  ' + a, sub: true })); }
+      else steps.push({ text: `prune page ${pg.id}: nothing is dead to every snapshot yet (horizon ${h})`, sub: true });
+    }
+    if (actions.length) this.markDirtyKey(rel.name + '/' + pg.id, steps);
+    return actions.length;
+  }
+
+  // ---------- statement runner ----------
+  run(sessName, sqlRaw) {
+    const sess = this.sessions[sessName];
+    const sql = sqlRaw.trim().replace(/;+\s*$/, '').trim();
+    if (!sql) return;
+    sess.history.push(sql);
+    sess.log.push({ type: 'cmd', text: sql, prompt: sess.failed ? '!' : sess.inTx ? '*' : '' });
+    this.clearTouch();
+    const steps = [];
+    this.trace = { session: sessName, sql, plan: '', steps, stats: null, buffers: null };
+    try {
+      const res = this.dispatch(sess, sql, steps);
+      if (res) sess.log.push(res);
+    } catch (e) {
+      if (!(e instanceof SimError)) { console.error(e); e = new SimError('internal simulator error: ' + e.message); }
+      if (e.kind === 'blocked') { sess.log.push({ type: 'warn', text: e.message, hint: e.hint }); steps.push({ text: e.message, verdict: 'blocked' }); }
+      else {
+        sess.log.push({ type: 'err', text: 'ERROR: ' + e.message, hint: e.hint });
+        steps.push({ text: 'ERROR: ' + e.message, verdict: 'err' });
+        if (e.fatal && sess.inTx) sess.failed = true;
+      }
+      if (sess._implicit) this.endTx(sess, false, steps, true);
+    }
+    sess._implicit = false;
+    const b = this.bufStats;
+    this.trace.buffers = (b.hit + b.read + b.dirtied + b.written + b.extended) ? { ...b } : null;
+  }
+
+  beginTx(sess, iso) { sess.inTx = true; sess.xid = null; sess.snapshot = null; sess.failed = false; sess.txIso = iso || sess.iso; }
+
+  endTx(sess, commit, steps, implicit = false) {
+    let msg;
+    if (sess.xid != null) {
+      this.clog[sess.xid] = commit ? 'committed' : 'aborted';
+      msg = `xid ${sess.xid} marked ${commit ? 'COMMITTED' : 'ABORTED'} in pg_xact.` + (commit ? '' : ' Its tuples stay on the pages until pruning or VACUUM removes them.');
+    } else msg = 'Transaction never wrote anything, so it never got an xid; nothing to record.';
+    if (steps) steps.push({ text: (implicit ? '(autocommit) ' : '') + msg, verdict: commit ? 'ok' : 'abort' });
+    sess.inTx = false; sess.xid = null; sess.snapshot = null; sess.failed = false; sess.txIso = null;
+    return msg;
+  }
+
+  assignXid(sess, steps) {
+    if (sess.xid == null) {
+      sess.xid = this.nextXid++;
+      this.clog[sess.xid] = 'in progress';
+      if (steps) steps.push({ text: `first write in this transaction → assigned xid ${sess.xid} (published in the ProcArray so other snapshots see it as running)` });
+    }
+    return sess.xid;
+  }
+
+  statementSnapshot(sess, steps) {
+    const iso = sess.inTx ? sess.txIso : sess.iso;
+    if (iso === 'REPEATABLE READ' && sess.snapshot) { steps.push({ text: `REPEATABLE READ → reusing transaction snapshot ${this.snapStr(sess.snapshot)}` }); sess.lastSnapshot = sess.snapshot; return sess.snapshot; }
+    const snap = this.takeSnapshot(sess);
+    sess.snapshot = snap;
+    sess.lastSnapshot = snap;
+    steps.push({ text: `${iso === 'REPEATABLE READ' ? 'REPEATABLE READ → first statement, taking the transaction snapshot' : 'READ COMMITTED → fresh snapshot for this statement'} from the ProcArray: ${this.snapStr(snap)}  (xmin:xmax:in-progress)` });
+    return snap;
+  }
+
+  dispatch(sess, sql, steps) {
+    const low = sql.toLowerCase();
+    let m;
+    if (sess.failed && !/^(rollback|abort|commit|end)\b/.test(low)) throw new SimError('current transaction is aborted, commands ignored until end of transaction block', { fatal: false, hint: 'Run ROLLBACK.' });
+    if ((m = low.match(/^(begin|start transaction)(?:\s+transaction)?(?:\s+isolation\s+level\s+(read\s+committed|repeatable\s+read|serializable))?$/))) {
+      this.trace.plan = 'Transaction control';
+      if (sess.inTx) { steps.push({ text: 'already in a transaction; BEGIN ignored' }); return { type: 'warn', text: 'WARNING: there is already a transaction in progress' }; }
+      let iso = m[2] ? m[2].replace(/\s+/g, ' ').toUpperCase() : null;
+      if (iso === 'SERIALIZABLE') iso = 'REPEATABLE READ';
+      this.beginTx(sess, iso);
+      steps.push({ text: `transaction block opened (${sess.txIso}). No xid yet: Postgres assigns one lazily on the first write. Snapshot is taken at the first statement, not at BEGIN.` });
+      return { type: 'ok', text: 'BEGIN' + (m[2] && /serial/.test(m[2]) ? ' (SERIALIZABLE is simulated as REPEATABLE READ)' : '') };
+    }
+    if (/^(commit|end)$/.test(low)) {
+      this.trace.plan = 'Transaction control';
+      if (!sess.inTx) { steps.push({ text: 'no transaction in progress' }); return { type: 'warn', text: 'WARNING: there is no transaction in progress' }; }
+      if (sess.failed) { this.endTx(sess, false, steps); return { type: 'ok', text: 'ROLLBACK (transaction had failed, so COMMIT rolls back)' }; }
+      this.endTx(sess, true, steps); return { type: 'ok', text: 'COMMIT' };
+    }
+    if (/^(rollback|abort)$/.test(low)) {
+      this.trace.plan = 'Transaction control';
+      if (!sess.inTx) { steps.push({ text: 'no transaction in progress' }); return { type: 'warn', text: 'WARNING: there is no transaction in progress' }; }
+      this.endTx(sess, false, steps); return { type: 'ok', text: 'ROLLBACK' };
+    }
+    if ((m = low.match(/^set\s+(?:session\s+characteristics\s+as\s+)?transaction\s+isolation\s+level\s+(read\s+committed|repeatable\s+read|serializable)$/))) {
+      this.trace.plan = 'SET';
+      let iso = m[1].replace(/\s+/g, ' ').toUpperCase(); if (iso === 'SERIALIZABLE') iso = 'REPEATABLE READ';
+      if (sess.inTx) { if (sess.snapshot) throw new SimError('SET TRANSACTION ISOLATION LEVEL must be called before any query', { fatal: true }); sess.txIso = iso; }
+      else sess.iso = iso;
+      steps.push({ text: `isolation level → ${iso}` });
+      return { type: 'ok', text: 'SET' };
+    }
+    if ((m = low.match(/^set\s+(enable_indexscan|enable_seqscan)\s*(?:=|to)\s*(on|off|true|false)$/))) {
+      this.trace.plan = 'SET';
+      const on = m[2] === 'on' || m[2] === 'true';
+      if (m[1] === 'enable_indexscan') sess.enableIndexScan = on; else sess.enableSeqScan = on;
+      steps.push({ text: `${m[1]} = ${on ? 'on' : 'off'} for session ${sess.name}` });
+      return { type: 'ok', text: 'SET' };
+    }
+    if (/^set\s+shared_buffers\b/.test(low)) {
+      this.trace.plan = 'SET';
+      throw new SimError('parameter "shared_buffers" cannot be changed without restarting the server', { fatal: true, hint: 'Use the shared_buffers control in the Shared memory panel. It simulates a restart.' });
+    }
+    if (low === 'checkpoint') {
+      if (sess.inTx) { /* allowed in PG */ }
+      this.trace.plan = 'CHECKPOINT';
+      steps.push({ text: 'write every dirty buffer back to its data file. (Real Postgres first makes sure the WAL describing those changes is on disk; WAL isn\'t modelled here.)', head: true });
+      const n = this.checkpoint(steps);
+      if (!n) steps.push({ text: 'no dirty buffers; nothing to write' });
+      return { type: 'ok', text: 'CHECKPOINT' };
+    }
+    if (/^vacuum(\s+verbose)?(\s+accounts)?$/.test(low)) {
+      if (sess.inTx) throw new SimError('VACUUM cannot run inside a transaction block', { fatal: true });
+      return this.vacuum(steps);
+    }
+    if ((m = low.match(/^alter\s+table\s+accounts\s+set\s*\(\s*fillfactor\s*=\s*(\d+)\s*\)$/))) {
+      const ff = Number(m[1]);
+      if (ff < 10 || ff > 100) throw new SimError(`value ${ff} out of bounds for option "fillfactor"`, { hint: 'Valid values are between 10 and 100.' });
+      this.fillfactor = ff;
+      this.trace.plan = 'ALTER TABLE';
+      steps.push({ text: `fillfactor = ${ff}: INSERTs now stop filling a page at ${ff}% (${this.insertCap()} of ${PAGE_CAP} tuples in this lab). The rest is left for UPDATEs of rows already on that page. Existing pages are not rewritten.` });
+      return { type: 'ok', text: 'ALTER TABLE' };
+    }
+    if (/^alter\s+table\s+accounts\s+add\s+column\s+notes\s+text$/.test(low)) {
+      this.hasNotes = true;
+      this.trace.plan = 'ALTER TABLE';
+      steps.push({ text: 'added column notes. This only changes the catalog: no existing row is rewritten, and reading an old row simply returns NULL for the new column.' });
+      return { type: 'ok', text: 'ALTER TABLE' };
+    }
+    if ((m = sql.match(/^create\s+index(?:\s+(\w+))?\s+on\s+(\w+)\s*\(([^)]*)\)(?:\s+include\s*\(([^)]*)\))?$/i))) return this.createIndex(sess, m[1], m[2], m[3].split(',').map(x => x.trim().toLowerCase()), steps, m[4] ? m[4].split(',').map(x => x.trim().toLowerCase()) : []);
+    if ((m = sql.match(/^drop\s+index\s+(\w+)$/i))) {
+      this.trace.plan = 'DROP INDEX';
+      const name = m[1].toLowerCase();
+      if (!this.indexes[name]) throw new SimError(`index "${m[1]}" does not exist`, { hint: 'Index names look like accounts_id_idx.' });
+      delete this.indexes[name];
+      this.buffers.forEach((b, i) => { if (b && b.rel === name) this.buffers[i] = null; });
+      steps.push({ text: `dropped index ${name}; its buffers were invalidated and its file deleted` });
+      return { type: 'ok', text: 'DROP INDEX' };
+    }
+
+    let explain = false, body = sql;
+    if (/^explain\s+/i.test(body)) { explain = true; body = body.replace(/^explain\s+(\(\s*[\w\s,]*\)\s*)?/i, ''); }
+    const isSelect = /^select\b/i.test(body), isWrite = /^(insert|update|delete)\b/i.test(body);
+    if (!isSelect && !isWrite) throw new SimError(`syntax error or unsupported statement`, { fatal: true, hint: 'Supported: BEGIN, COMMIT, ROLLBACK, SELECT, INSERT, UPDATE, DELETE, CREATE INDEX, DROP INDEX, VACUUM, CHECKPOINT, EXPLAIN, SET.' });
+    if (!sess.inTx && !explain) { this.beginTx(sess); sess._implicit = true; steps.push({ text: `no BEGIN → this statement runs in its own transaction (autocommit)` }); }
+    let res;
+    if (isSelect) res = this.select(sess, body, steps, explain);
+    else if (/^insert/i.test(body)) res = explain ? this.explainOnly('Insert on accounts', steps) : this.insert(sess, body, steps);
+    else if (/^update/i.test(body)) res = this.update(sess, body, steps, explain);
+    else res = this.del(sess, body, steps, explain);
+    if (sess._implicit) { this.endTx(sess, true, steps, true); sess._implicit = false; }
+    return res;
+  }
+
+  explainOnly(plan, steps) { this.trace.plan = plan; steps.push({ text: 'EXPLAIN only shows the plan; nothing executed.' }); return { type: 'plan', text: plan }; }
+
+  checkTable(name) { if (name.toLowerCase() !== TABLE) throw new SimError(`relation "${name}" does not exist`, { hint: 'This lab has one table: accounts(id int, name text, balance int, notes text).' }); }
+
+  parseCond(str) {
+    const m = str.trim().match(/^(\w+)\s*(=|<>|!=|<=|>=|<|>)\s*(.+)$/);
+    if (!m) throw new SimError(`could not parse condition "${str}"`, { hint: "Use conditions like id = 1, name = 'bob' or balance > 100, joined with AND." });
+    const col = m[1].toLowerCase();
+    if (!COLS.includes(col) && col !== 'ctid') throw new SimError(`column "${col}" does not exist`);
+    if (col === 'notes') throw new SimError('filtering on notes isn\'t supported in this lab', { hint: 'Filter on id, name or balance.' });
+    if (col === 'ctid') { const t = String(parseLiteral(m[3])).match(/^\((\d+),(\d+)\)$/); if (!t || m[2] !== '=') throw new SimError('use WHERE ctid = \'(page,lp)\''); return { col, op: '=', val: { p: +t[1], lp: +t[2] } }; }
+    return { col, op: m[2] === '!=' ? '<>' : m[2], val: parseLiteral(m[3]) };
+  }
+
+  parseWhere(str) {
+    if (!str) return null;
+    return str.split(/\s+and\s+/i).map(s => this.parseCond(s));
+  }
+
+  condOk(w, v) {
+    const c = cmp(v, w.val);
+    return { '=': c === 0, '<>': c !== 0, '<': c < 0, '>': c > 0, '<=': c <= 0, '>=': c >= 0 }[w.op];
+  }
+
+  matches(where, data) {
+    if (!where) return true;
+    return where.every(w => w.col === 'ctid' || !(w.col in data) || this.condOk(w, data[w.col]));
+  }
+
+  condStr(conds) { return conds.map(w => `${w.col} ${w.op} ${fmtVal(w.val)}`).join(' AND '); }
+
+  entryData(idx, e) { const d = {}; idx.cols.forEach((c, i) => d[c] = e.key[i]); return { ...d, ...(e.inc || {}) }; }
+
+  // How much of this index can a WHERE clause use to navigate the tree?
+  indexFit(idx, where) {
+    const bound = [];
+    for (const c of idx.cols) {
+      const cs = where.filter(w => w.col === c && w.op !== '<>');
+      if (!cs.length) break;
+      const eq = cs.find(w => w.op === '=');
+      if (eq) { bound.push(eq); continue; }
+      bound.push(...cs); break;
+    }
+    const boundCols = new Set(bound.map(w => w.col));
+    const idxCols = new Set([...idx.cols, ...(idx.include || [])]);
+    const inIndex = where.filter(w => !bound.includes(w) && idx.cols.includes(w.col));
+    const heapFilter = where.filter(w => !bound.includes(w) && !inIndex.includes(w));
+    return { bound, boundCols, inIndex, heapFilter, idxCols };
+  }
+
+  choosePlan(sess, where, cols) {
+    if (where && where.some(w => w.col === 'ctid')) return { kind: 'tid' };
+    if (!where) return { kind: 'seq', reason: 'no WHERE clause' };
+    let best = null;
+    for (const idx of Object.values(this.indexes)) {
+      const fit = this.indexFit(idx, where);
+      if (!fit.bound.length) continue;
+      const score = fit.bound.length * 10 + fit.inIndex.length;
+      if (!best || score > best.score) best = { idx, fit, score };
+    }
+    if (best && (sess.enableIndexScan || !sess.enableSeqScan)) {
+      const need = [...(cols || []), ...where.map(w => w.col)];
+      const ios = !!(cols && cols.length) && need.every(c => best.fit.idxCols.has(c));
+      return { kind: 'index', idx: best.idx, fit: best.fit, ios };
+    }
+    const lead = Object.values(this.indexes).map(i => i.cols[0]);
+    return { kind: 'seq', reason: best ? 'enable_indexscan = off' : Object.keys(this.indexes).length ? `no index starts with ${[...new Set(where.map(w => w.col))].join(' or ')}` : `no index` };
+  }
+
+  newStats() { return { heapPages: new Set(), indexPages: 0, toastPages: 0, tuplesChecked: 0, visible: 0, invisible: 0, returned: 0, heapFetches: 0, vmSkips: 0, entriesRead: 0, entriesPassed: 0 }; }
+
+  scan(sess, where, snap, steps, label, cols) {
+    const plan = this.choosePlan(sess, where, cols);
+    this.lastPlan = plan;
+    const wtxt = where ? ` (${this.condStr(where)})` : '';
+    const out = [];
+    const stats = this.newStats();
+    this.trace.stats = stats;
+    const check = (tid, t, extra = '', filter = where, filterLabel = 'WHERE') => {
+      stats.tuplesChecked++; stats.heapPages.add(tid.p);
+      const sub = [];
+      const v = this.visibility(t, snap, sess, sub);
+      const flag = t.heapOnly ? ' [heap-only]' : '';
+      if (!v.visible) {
+        stats.invisible++;
+        steps.push({ text: `${tidStr(tid)}${extra}${flag} ${fmtRow(t.data)} → INVISIBLE: ${v.why}`, tid, rel: TABLE, verdict: 'invis' });
+        steps.push(...sub);
+        this.touched[tkey(TABLE, tid)] = 'invis';
+        return false;
+      }
+      stats.visible++;
+      const hasF = filter && filter.length;
+      const ok = !hasF || this.matches(filter, t.data);
+      steps.push({ text: `${tidStr(tid)}${extra}${flag} ${fmtRow(t.data)} → visible (${v.why})${hasF ? (ok ? `, passes ${filterLabel}` : `, rejected by ${filterLabel}`) : ''}`, tid, rel: TABLE, verdict: ok ? 'vis' : 'skip' });
+      steps.push(...sub);
+      this.touched[tkey(TABLE, tid)] = ok ? 'vis' : 'skip';
+      if (ok) { out.push({ tid, tuple: t }); stats.returned++; }
+      return true;
+    };
+    if (plan.kind === 'tid') {
+      const tid = where.find(w => w.col === 'ctid').val;
+      this.trace.plan = `${label}Tid Scan on accounts (ctid = '${tidStr(tid)}')`;
+      steps.push({ text: `Tid Scan: the ctid is a physical address, so go straight to page ${tid.p}, line pointer ${tid.lp}. No searching.`, head: true });
+      const lp = this.getLp(this.heap, tid);
+      if (this.heap.pages[tid.p]) { this.bufAccess(TABLE, tid.p, steps); stats.heapPages.add(tid.p); }
+      if (!lp) steps.push({ text: `${tidStr(tid)} does not exist`, sub: true });
+      else if (lp.state !== 'normal') steps.push({ text: `${tidStr(tid)} line pointer is ${lp.state}; no tuple here`, sub: true });
+      else check(tid, lp.tuple);
+      stats.heapPages = stats.heapPages.size;
+      return out;
+    }
+    if (plan.kind === 'seq') {
+      this.trace.plan = `${label}Seq Scan on accounts${wtxt}  [${plan.reason}]`;
+      steps.push({ text: `Seq Scan: read every page in order, check every tuple's visibility, then the filter.`, head: true });
+      for (const pg of this.heap.pages) {
+        steps.push({ text: `read heap page ${pg.id}`, head: true });
+        this.bufAccess(TABLE, pg.id, steps);
+        stats.heapPages.add(pg.id);
+        pg.lps.forEach((lp, i) => {
+          const tid = { p: pg.id, lp: i + 1 };
+          if (lp.state === 'unused') steps.push({ text: `${tidStr(tid)} line pointer unused, skip`, sub: true });
+          else if (lp.state === 'dead') steps.push({ text: `${tidStr(tid)} line pointer dead (tuple already pruned away), skip`, sub: true });
+          else if (lp.state === 'redirect') steps.push({ text: `${tidStr(tid)} redirect → lp ${lp.to}; a seq scan ignores redirects and reaches that tuple on its own`, sub: true });
+          else check(tid, lp.tuple);
+        });
+      }
+    } else {
+      const idx = plan.idx, fit = plan.fit, leaves = this.indexLeaves(idx);
+      this.trace.plan = `${label}Index ${plan.ios ? 'Only ' : ''}Scan using ${idx.name} on accounts${wtxt}`;
+      if (plan.ios) steps.push({ text: `Index Only Scan: every column the query needs is stored in the index. But the index can't tell whether a row is visible to this snapshot, so for each entry check the visibility map first.`, head: true });
+      else steps.push({ text: `Index Scan: walk the B-tree to the matching keys, collect heap TIDs, then fetch each heap tuple to check visibility. The index has no xmin/xmax, so it can't tell which versions are alive.`, head: true });
+      steps.push({ text: `Index Cond (used to navigate the tree): ${this.condStr(fit.bound)}`, sub: true });
+      if (fit.inIndex.length) steps.push({ text: `checked on each index entry, but can't narrow the search: ${this.condStr(fit.inIndex)} (${idx.cols[0]} comes first in this index)`, sub: true });
+      if (fit.heapFilter.length && !plan.ios) steps.push({ text: `Filter, checked on the heap row: ${this.condStr(fit.heapFilter)} (not in this index)`, sub: true });
+      this.bufAccess(idx.name, 0, steps); stats.indexPages++;
+      const hits = [], readLeaves = [];
+      leaves.forEach((leaf, li) => {
+        const inRange = leaf.filter(e => this.matches(fit.bound, this.entryData(idx, e)));
+        if (!inRange.length) return;
+        stats.indexPages++; readLeaves.push(li); this.bufAccess(idx.name, li + 1, steps);
+        stats.entriesRead += inRange.length;
+        inRange.forEach(e => { const pass = this.matches(fit.inIndex, this.entryData(idx, e)); hits.push({ e, li, pass }); });
+      });
+      steps.push({ text: `index root page → descend to leaf page${readLeaves.length > 1 ? 's' : ''} ${readLeaves.length ? readLeaves.map(l => 'L' + (l + 1)).join(', ') : '(none matched)'}; read ${stats.entriesRead} entr${stats.entriesRead === 1 ? 'y' : 'ies'} in range`, head: true });
+      const keyStr = e => idx.cols.length > 1 ? `(${e.key.map(fmtVal).join(', ')})` : fmtVal(e.key[0]);
+      if (hits.length) steps.push({ text: `entries: ${hits.map(h => `${keyStr(h.e)}→${tidStr(h.e.tid)}${fit.inIndex.length ? (h.pass ? ' ✓' : ' ✗') : ''}`).join('  ')}`, sub: true });
+      hits.forEach(h => { this.touchedIdx[idx.name + '|' + tidKey(h.e.tid)] = h.pass ? 'hit' : 'read'; });
+      for (const { e, pass } of hits) {
+        if (!pass) continue;
+        stats.entriesPassed++;
+        const pg = this.heap.pages[e.tid.p];
+        if (plan.ios && pg && pg.allVisible) {
+          stats.vmSkips++;
+          steps.push({ text: `${keyStr(e)} → ${tidStr(e.tid)}: visibility map says page ${e.tid.p} is all-visible → return the values straight from the index, skip the heap`, verdict: 'vm' });
+          const d = this.entryData(idx, e);
+          if (this.matches(where, d)) { out.push({ tid: e.tid, tuple: null, data: d }); stats.returned++; }
+          continue;
+        }
+        if (plan.ios) { stats.heapFetches++; steps.push({ text: `${keyStr(e)} → ${tidStr(e.tid)}: page ${e.tid.p} not marked all-visible → must fetch the heap tuple to check visibility (a "heap fetch")`, sub: true }); }
+        const lp = this.getLp(this.heap, e.tid);
+        this.bufAccess(TABLE, e.tid.p, steps);
+        stats.heapPages.add(e.tid.p);
+        if (!lp || lp.state === 'unused') { steps.push({ text: `${tidStr(e.tid)} line pointer unused, skip`, sub: true }); continue; }
+        if (lp.state === 'dead') { steps.push({ text: `${tidStr(e.tid)} heap fetch: line pointer is dead (pruned). The index entry is stale until VACUUM removes it.`, tid: e.tid, rel: TABLE, verdict: 'invis' }); continue; }
+        let start = e.tid.lp, requireHO = false;
+        if (lp.state === 'redirect') { steps.push({ text: `${tidStr(e.tid)} heap fetch: line pointer is a redirect → lp ${lp.to}`, verdict: 'hot' }); start = lp.to; requireHO = true; }
+        const chain = this.chainFrom(pg, start, requireHO);
+        if (chain.length > 1) steps.push({ text: `HOT chain on page ${pg.id}: ${chain.map(c => 'lp ' + c).join(' → ')}. Walk it until a version is visible.`, verdict: 'hot' });
+        for (let ci = 0; ci < chain.length; ci++) {
+          const tid = { p: pg.id, lp: chain[ci] };
+          const vis = check(tid, pg.lps[chain[ci] - 1].tuple, ci === 0 && lp.state !== 'redirect' ? ' (heap fetch)' : ' (via HOT chain)', plan.ios ? where : [...fit.heapFilter, ...fit.bound, ...fit.inIndex], 'Filter');
+          if (vis) { if (ci < chain.length - 1) steps.push({ text: `found the visible version; rest of the chain not needed`, sub: true }); break; }
+        }
+      }
+    }
+    stats.heapPages = stats.heapPages.size;
+    return out;
+  }
+
+  parseSelectList(str) {
+    const cols = [];
+    str.split(',').map(s => s.trim().toLowerCase()).forEach(c => {
+      if (c === '*') cols.push(...COLS.filter(x => x !== 'notes' || this.hasNotes));
+      else if (COLS.includes(c) || SYS_COLS.includes(c)) cols.push(c);
+      else throw new SimError(`column "${c}" does not exist`);
+    });
+    return cols;
+  }
+
+  select(sess, body, steps, explain) {
+    let m = body.match(/^select\s+(txid_current|pg_current_xact_id)\s*\(\s*\)$/i);
+    if (m) {
+      this.trace.plan = 'Result';
+      if (explain) return this.explainOnly('Result', steps);
+      const x = this.assignXid(sess, steps);
+      return { type: 'rows', cols: [m[1].toLowerCase()], rows: [[x]] };
+    }
+    m = body.match(/^select\s+(pg_current_snapshot|txid_current_snapshot)\s*\(\s*\)$/i);
+    if (m) {
+      this.trace.plan = 'Result';
+      if (explain) return this.explainOnly('Result', steps);
+      const s = this.statementSnapshot(sess, steps);
+      return { type: 'rows', cols: [m[1].toLowerCase()], rows: [[this.snapStr(s)]] };
+    }
+    m = body.match(/^select\s+(.+?)\s+from\s+(\w+)(?:\s+where\s+(.+?))?(?:\s+order\s+by\s+(\w+))?$/i);
+    if (!m) throw new SimError('could not parse SELECT', { hint: "Try: SELECT ctid, xmin, xmax, * FROM accounts WHERE id = 1" });
+    this.checkTable(m[2]);
+    const cols = this.parseSelectList(m[1]);
+    const where = this.parseWhere(m[3]);
+    if (explain) { const p = this.choosePlan(sess, where, cols); this.trace.plan = p.kind === 'tid' ? 'Tid Scan on accounts' : p.kind === 'index' ? `Index ${p.ios ? 'Only ' : ''}Scan using ${p.idx.name} on accounts` : `Seq Scan on accounts  [${p.reason}]`; steps.push({ text: 'EXPLAIN only shows the plan; nothing executed.' }); return { type: 'plan', text: this.trace.plan }; }
+    const snap = this.statementSnapshot(sess, steps);
+    let rows = this.scan(sess, where, snap, steps, '', cols);
+    rows = rows.map(r => r.tuple ? r : { ...r, tuple: { data: r.data, toast: null, xmin: '', xmax: '' } });
+    if (m[4]) { const oc = m[4].toLowerCase(); if (!COLS.includes(oc)) throw new SimError(`column "${oc}" does not exist`); rows = rows.slice().sort((a, b) => cmp(a.tuple.data[oc], b.tuple.data[oc])); }
+    const wantsNotes = cols.includes('notes');
+    if (this.trace.stats && this.lastPlan && this.lastPlan.ios) steps.push({ text: `Heap Fetches: ${this.trace.stats.heapFetches} (rows that needed a heap visit), ${this.trace.stats.vmSkips} answered from the index alone`, verdict: 'vm' });
+    const anyToasted = rows.some(r => r.tuple.toast && (r.tuple.toast.mode === 'external' || r.tuple.toast.mode === 'compressed'));
+    if (anyToasted) {
+      if (wantsNotes) { steps.push({ text: 'Output needs notes → detoast values that were compressed or moved out of line', head: true }); rows.forEach(r => this.detoast(r.tid, r.tuple, steps, this.trace.stats)); }
+      else steps.push({ text: `notes wasn't requested, so no TOAST value was decompressed or fetched. ${TOAST_REL} was never touched.`, verdict: 'ok' });
+    }
+    return {
+      type: 'rows', cols, rows: rows.map(({ tid, tuple }) => cols.map(c => c === 'ctid' ? tidStr(tid) : c === 'xmin' ? tuple.xmin : c === 'xmax' ? tuple.xmax : c === 'notes' ? fmtNotes(tuple.data.notes) : tuple.data[c]))
+    };
+  }
+
+  splitRows(s) {
+    const rows = []; let depth = 0, q = false, start = -1;
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (ch === "'") q = !q;
+      if (q) continue;
+      if (ch === '(') { if (depth === 0) start = i + 1; depth++; }
+      else if (ch === ')') { depth--; if (depth === 0) rows.push(s.slice(start, i)); }
+    }
+    return rows;
+  }
+
+  insert(sess, body, steps) {
+    const m = body.match(/^insert\s+into\s+(\w+)\s*(?:\(([^)]*)\))?\s*values\s*(.+)$/i);
+    if (!m) throw new SimError('could not parse INSERT', { hint: "Try: INSERT INTO accounts VALUES (4, 'dave', 400)" });
+    this.checkTable(m[1]);
+    const cols = m[2] ? m[2].split(',').map(s => s.trim().toLowerCase()) : COLS.filter(x => x !== 'notes' || this.hasNotes);
+    cols.forEach(c => { if (!COLS.includes(c)) throw new SimError(`column "${c}" does not exist`); });
+    const tuples = this.splitRows(m[3]).map(r => splitTop(r).map(parseLiteral));
+    if (!tuples.length) throw new SimError('INSERT needs at least one (…) row');
+    this.trace.plan = 'Insert on accounts';
+    for (const vals of tuples) if (vals.length > cols.length) throw new SimError('INSERT has more expressions than target columns');
+    const xid = this.assignXid(sess, steps);
+    for (const vals of tuples) {
+      const data = { id: null, name: null, balance: null, notes: null };
+      cols.forEach((c, i) => { if (i < vals.length) data[c] = vals[i]; });
+      this.insertRow(data, xid, null, steps);
+    }
+    return { type: 'ok', text: `INSERT 0 ${tuples.length}` };
+  }
+
+  checkWritable(sess, tid, t, steps) {
+    if (!t.xmax || t.xmax === sess.xid) return;
+    const ys = this.status(t.xmax);
+    if (ys === 'aborted') { steps.push({ text: `  xmax ${t.xmax} was aborted, so the old xmax can be overwritten`, sub: true }); return; }
+    if (ys === 'in progress') throw new SimError(`⏳ Session ${sess.name} would block here: ${tidStr(tid)} is being updated/deleted by xid ${t.xmax}, which hasn't committed or rolled back.`, { kind: 'blocked', fatal: false, hint: `In real Postgres this statement just waits. Finish the other transaction, then run this again. (Under READ COMMITTED Postgres would then re-check the newest version of the row; under REPEATABLE READ it fails if the other side committed.)` });
+    throw new SimError(`could not serialize access due to concurrent update`, { fatal: true, hint: `${tidStr(tid)} was changed by xid ${t.xmax}, which committed after this REPEATABLE READ snapshot. Run ROLLBACK and retry the transaction.` });
+  }
+
+  update(sess, body, steps, explain) {
+    const m = body.match(/^update\s+(\w+)\s+set\s+(.+?)(?:\s+where\s+(.+))?$/i);
+    if (!m) throw new SimError('could not parse UPDATE', { hint: 'Try: UPDATE accounts SET balance = balance - 10 WHERE id = 1' });
+    this.checkTable(m[1]);
+    const sets = splitTop(m[2]).map(s => {
+      const a = s.trim().match(/^(\w+)\s*=\s*(.+)$/);
+      if (!a) throw new SimError(`could not parse SET "${s}"`);
+      const col = a[1].toLowerCase(); if (!COLS.includes(col)) throw new SimError(`column "${col}" does not exist`);
+      return { col, expr: a[2].trim() };
+    });
+    const where = this.parseWhere(m[3]);
+    if (explain) { const p = this.choosePlan(sess, where); return this.explainOnly(`Update on accounts → ${p.kind === 'index' ? 'Index Scan using ' + p.idx.name : 'Seq Scan'}`, steps); }
+    const snap = this.statementSnapshot(sess, steps);
+    const targets = this.scan(sess, where, snap, steps, 'Update on accounts → ');
+    if (!targets.length) { steps.push({ text: 'no visible rows matched; nothing to update' }); return { type: 'ok', text: 'UPDATE 0' }; }
+    for (const { tid, tuple } of targets) this.checkWritable(sess, tid, tuple, steps);
+    const xid = this.assignXid(sess, steps);
+    const setsNotes = sets.some(s => s.col === 'notes');
+    for (const { tid, tuple } of targets) {
+      steps.push({ text: `update ${tidStr(tid)}: an UPDATE never changes a tuple in place. Stamp xmax on the old version, write a whole new version.`, head: true });
+      const nd = { ...tuple.data };
+      for (const s of sets) nd[s.col] = evalExpr(s.expr, tuple.data);
+      const pg = this.heap.pages[tid.p];
+      let room = this.pageSlot(pg);
+      if (!room) {
+        steps.push({ text: `page ${tid.p} has no room for the new version → prune it first. (Real Postgres prunes on the read just before, once a page is nearly full.)`, sub: true });
+        this.prunePage(this.heap, pg, this.horizon(), steps);
+        room = this.pageSlot(pg);
+      }
+      tuple.xmax = xid; delete tuple.hints.xmaxC; delete tuple.hints.xmaxA;
+      this.bufAccess(TABLE, tid.p, steps, { dirty: true });
+      this.clearVM(tid.p, steps);
+      steps.push({ text: `old version ${tidStr(tid)}: set xmax = ${xid}`, tid, rel: TABLE, verdict: 'del' });
+      this.touched[tkey(TABLE, tid)] = 'del';
+      // TOAST
+      let toast;
+      if (setsNotes && cmp(nd.notes, tuple.data.notes) !== 0) {
+        this.toastDelete(tuple.toast, xid, steps, 'because notes was replaced');
+        toast = this.toastValue(nd, xid, steps);
+      } else {
+        toast = tuple.toast;
+        if (toast && toast.mode === 'external') steps.push({ text: `notes unchanged → new version reuses the same TOAST pointer (chunk_id ${toast.chunkId}). No chunks copied.`, verdict: 'toast' });
+      }
+      const changed = [...new Set(Object.values(this.indexes).flatMap(ix => [...ix.cols, ...(ix.include || [])]))].filter(c => cmp(tuple.data[c], nd[c]) !== 0);
+      const hasIdx = Object.keys(this.indexes).length;
+      let res;
+      if (room && !changed.length) {
+        res = this.insertRow(nd, xid, tid.p, steps, { toast, heapOnly: true, slot: room });
+        tuple.hotUpdated = true;
+        steps.push({ text: `HOT update: no indexed column changed ${hasIdx ? '' : '(there are no indexes) '}and page ${tid.p} had room, so the new version is a heap-only tuple. ${hasIdx ? `Skipped ${hasIdx} index insert${hasIdx > 1 ? 's' : ''}; index entries still point at the chain's root.` : 'Any future index will reach it through the chain.'}`, verdict: 'hot' });
+      } else {
+        const why = changed.length ? `indexed column${changed.length > 1 ? 's' : ''} ${changed.join(', ')} changed` : `page ${tid.p} has no room even after pruning`;
+        steps.push({ text: `not a HOT update: ${why}. New version gets its own entry in every index.`, verdict: 'nohot' });
+        tuple.hotUpdated = false;
+        res = this.insertRow(nd, xid, tid.p, steps, room ? { toast, slot: room } : { toast });
+      }
+      tuple.ctid = { ...res.tid };
+      steps.push({ text: `  old ${tidStr(tid)}.t_ctid → ${tidStr(res.tid)} (forward pointer to the newer version)`, sub: true });
+    }
+    return { type: 'ok', text: `UPDATE ${targets.length}` };
+  }
+
+  del(sess, body, steps, explain) {
+    const m = body.match(/^delete\s+from\s+(\w+)(?:\s+where\s+(.+))?$/i);
+    if (!m) throw new SimError('could not parse DELETE', { hint: 'Try: DELETE FROM accounts WHERE id = 2' });
+    this.checkTable(m[1]);
+    const where = this.parseWhere(m[2]);
+    if (explain) { const p = this.choosePlan(sess, where); return this.explainOnly(`Delete on accounts → ${p.kind === 'index' ? 'Index Scan using ' + p.idx.name : 'Seq Scan'}`, steps); }
+    const snap = this.statementSnapshot(sess, steps);
+    const targets = this.scan(sess, where, snap, steps, 'Delete on accounts → ');
+    if (!targets.length) { steps.push({ text: 'no visible rows matched; nothing to delete' }); return { type: 'ok', text: 'DELETE 0' }; }
+    for (const { tid, tuple } of targets) this.checkWritable(sess, tid, tuple, steps);
+    const xid = this.assignXid(sess, steps);
+    steps.push({ text: `A DELETE only stamps xmax. The bytes stay on the page until pruning or VACUUM.`, head: true });
+    for (const { tid, tuple } of targets) {
+      tuple.xmax = xid; tuple.hotUpdated = false; delete tuple.hints.xmaxC; delete tuple.hints.xmaxA;
+      this.bufAccess(TABLE, tid.p, steps, { dirty: true });
+      this.clearVM(tid.p, steps);
+      steps.push({ text: `${tidStr(tid)}: set xmax = ${xid}`, tid, rel: TABLE, verdict: 'del' });
+      this.touched[tkey(TABLE, tid)] = 'del';
+      this.toastDelete(tuple.toast, xid, steps, 'because its row was deleted');
+    }
+    return { type: 'ok', text: `DELETE ${targets.length}` };
+  }
+
+  createIndex(sess, name, table, cols, steps, include = []) {
+    this.checkTable(table);
+    cols.forEach(c => { if (!COLS.includes(c)) throw new SimError(`column "${c}" does not exist`); if (c === 'notes') throw new SimError('indexing notes isn\'t supported in this lab', { fatal: false }); });
+    include.forEach(c => { if (!COLS.includes(c) || c === 'notes' || cols.includes(c)) throw new SimError(`can't INCLUDE column "${c}" here`, { fatal: false }); });
+    const iname = (name || `accounts_${[...cols, ...include].join('_')}_idx`).toLowerCase();
+    if (this.indexes[iname]) throw new SimError(`relation "${iname}" already exists`, { fatal: false });
+    this.trace.plan = 'CREATE INDEX (B-tree)';
+    const idx = { name: iname, cols, col: cols[0], include, entries: [] };
+    if (cols.length > 1) steps.push({ text: `multicolumn B-tree: entries are sorted by ${cols[0]} first, then by ${cols.slice(1).join(', then ')} among equal ${cols[0]} values.`, head: true });
+    if (include.length) steps.push({ text: `INCLUDE (${include.join(', ')}): each leaf entry also stores ${include.join(', ')}. The tree is still sorted and searched by ${cols.join(', ')} only.`, head: true });
+    steps.push({ text: `scan the heap and add one entry per HOT chain (key → ctid of the chain's root). Heap-only tuples get no entry of their own.`, head: true });
+    for (const pg of this.heap.pages) {
+      this.bufAccess(TABLE, pg.id, steps);
+      pg.lps.forEach((lp, i) => {
+        const tid = { p: pg.id, lp: i + 1 };
+        let t;
+        if (lp.state === 'redirect') { const ch = this.chainFrom(pg, lp.to, true); t = ch.length ? pg.lps[ch[ch.length - 1] - 1].tuple : null; }
+        else if (lp.state === 'normal' && !lp.tuple.heapOnly) { const ch = this.chainFrom(pg, i + 1, false); t = pg.lps[ch[ch.length - 1] - 1].tuple; }
+        if (!t) return;
+        if (this.tupleState(t) === 'aborted') return;
+        const key = cols.map(c => t.data[c]);
+        idx.entries.push({ key, tid, inc: this.incOf(idx, t.data) });
+        steps.push({ text: `${tidStr(tid)} key ${key.length > 1 ? '(' + key.map(fmtVal).join(', ') + ')' : fmtVal(key[0])}${lp.state === 'redirect' ? '  (redirect root of a HOT chain)' : ''}`, sub: true, tid, rel: TABLE });
+      });
+    }
+    this.sortIndex(idx);
+    this.indexes[iname] = idx;
+    steps.push({ text: `sorted ${idx.entries.length} entries into ${this.indexLeaves(idx).length} leaf page(s) under one root page, written straight to the new index file (an index build bypasses shared buffers)` });
+    return { type: 'ok', text: 'CREATE INDEX' };
+  }
+
+  vacuum(steps) {
+    this.trace.plan = 'VACUUM accounts (and its TOAST table)';
+    const h = this.horizon();
+    steps.push({ text: `removal horizon = ${h}: the oldest xid any open transaction or snapshot might still need. Versions deleted by a committed xid older than this are invisible to everyone.`, head: true });
+    steps.push({ text: `pass 1: prune every heap page`, head: true });
+    let kept = 0;
+    for (const pg of this.heap.pages) {
+      this.bufAccess(TABLE, pg.id, steps);
+      pg.lps.forEach((lp, i) => {
+        if (lp.state !== 'normal') return;
+        const t = lp.tuple;
+        if (t.xmax && this.status(t.xmax) === 'committed' && this.status(t.xmin) === 'committed' && t.xmax >= h) { kept++; steps.push({ text: `${tidStr({ p: pg.id, lp: i + 1 })} KEPT: recently dead. xmax ${t.xmax} committed, but a snapshot from before it may still need this version.`, tid: { p: pg.id, lp: i + 1 }, rel: TABLE, verdict: 'keep' }); this.touched[tkey(TABLE, { p: pg.id, lp: i + 1 })] = 'keep'; }
+      });
+      this.prunePage(this.heap, pg, h, steps);
+    }
+    const deadLps = [];
+    this.heap.pages.forEach(pg => pg.lps.forEach((lp, i) => { if (lp.state === 'dead') deadLps.push({ p: pg.id, lp: i + 1 }); }));
+    const deadKeys = new Set(deadLps.map(tidKey));
+    let idxRemoved = 0;
+    if (deadLps.length) steps.push({ text: `pass 2: remove index entries pointing at ${deadLps.length} dead line pointer${deadLps.length > 1 ? 's' : ''}`, head: true });
+    for (const idx of Object.values(this.indexes)) {
+      const before = idx.entries.length;
+      const nLeaves = this.indexLeaves(idx).length;
+      if (deadLps.length) for (let b = 0; b <= nLeaves; b++) this.bufAccess(idx.name, b, null);
+      idx.entries = idx.entries.filter(e => !deadKeys.has(tidKey(e.tid)));
+      const n = before - idx.entries.length; idxRemoved += n;
+      if (n) { steps.push({ text: `index ${idx.name}: removed ${n} entr${n === 1 ? 'y' : 'ies'}`, sub: true }); for (let b = 0; b <= nLeaves; b++) this.markDirtyKey(idx.name + '/' + b, null); }
+    }
+    if (deadLps.length) steps.push({ text: `pass 3: dead line pointers → unused. Only now is it safe: no index entry can still point at them.`, head: true });
+    for (const t of deadLps) { this.heap.pages[t.p].lps[t.lp - 1] = { state: 'unused' }; this.markDirtyKey(TABLE + '/' + t.p, null); steps.push({ text: `${tidStr(t)} → unused`, sub: true, verdict: 'removed' }); }
+    // TOAST table
+    let toastFreed = 0;
+    if (this.toast.pages.length) {
+      steps.push({ text: `vacuum ${TOAST_REL}`, head: true });
+      for (const pg of this.toast.pages) {
+        this.bufAccess(TOAST_REL, pg.id, steps);
+        pg.lps.forEach((lp, i) => {
+          if (lp.state === 'normal' && this.deadToAll(lp.tuple, h)) { pg.lps[i] = { state: 'unused' }; toastFreed++; this.markDirtyKey(TOAST_REL + '/' + pg.id, null); steps.push({ text: `${TOAST_REL} ${tidStr({ p: pg.id, lp: i + 1 })}: chunk ${lp.tuple.data.chunk_id}/${lp.tuple.data.chunk_seq} removed`, sub: true, verdict: 'removed' }); }
+        });
+      }
+      if (!toastFreed) steps.push({ text: 'no dead chunks', sub: true });
+    }
+    for (const pg of this.heap.pages) pg.lps.forEach(lp => { if (lp.state === 'normal') { this.xidStatusWithHints(lp.tuple, 'xmin', null, true); if (lp.tuple.xmax) this.xidStatusWithHints(lp.tuple, 'xmax', null, true); } });
+    const nowVisible = [];
+    for (const pg of this.heap.pages) {
+      const ok = pg.lps.every(lp => lp.state === 'unused' || lp.state === 'redirect' || (lp.state === 'normal' && this.status(lp.tuple.xmin) === 'committed' && lp.tuple.xmin < h && (!lp.tuple.xmax || this.status(lp.tuple.xmax) === 'aborted')));
+      if (ok && !pg.allVisible) { pg.allVisible = true; nowVisible.push(pg.id); this.markDirtyKey(TABLE + '/' + pg.id, null); }
+      if (!ok) pg.allVisible = false;
+    }
+    if (nowVisible.length) steps.push({ text: `visibility map: marked page${nowVisible.length > 1 ? 's' : ''} ${nowVisible.join(', ')} all-visible (every tuple on ${nowVisible.length > 1 ? 'them' : 'it'} is visible to every transaction)`, verdict: 'vm' });
+    if (!deadLps.length && !toastFreed && !kept) steps.push({ text: 'nothing to clean' });
+    return { type: 'ok', text: `VACUUM: freed ${deadLps.length} line pointer${deadLps.length === 1 ? '' : 's'}, ${idxRemoved} index entr${idxRemoved === 1 ? 'y' : 'ies'}, ${toastFreed} TOAST chunk${toastFreed === 1 ? '' : 's'}; kept ${kept} recently dead` };
+  }
+
+  lensSnapshot(sess) { const iso = sess.inTx ? sess.txIso : sess.iso; if (sess.inTx && iso === 'REPEATABLE READ' && sess.snapshot) return sess.snapshot; return this.takeSnapshot(sess); }
+
+  diskBlocks() {
+    const out = [{ rel: TABLE, n: this.heap.pages.length }];
+    for (const idx of Object.values(this.indexes)) out.push({ rel: idx.name, n: this.indexLeaves(idx).length + 1, isIdx: true });
+    if (this.toast.pages.length) { out.push({ rel: TOAST_REL, n: this.toast.pages.length }); out.push({ rel: TOAST_IDX, n: 1, isIdx: true }); }
+    return out;
+  }
+}
+
+// ---------- helpers ----------
+function varlena(s) { return s.length <= 126 ? s.length + 1 : s.length + 4; }
+function estimateCompressed(s) {
+  const n = s.length;
+  if (n < 32) return null;
+  for (let p = 1; p <= 64 && p * 2 <= n; p++) {
+    let ok = true;
+    for (let i = p; i < n; i++) if (s.charCodeAt(i) !== s.charCodeAt(i - p)) { ok = false; break; }
+    if (ok) return p + 3 * Math.ceil(n / 273) + 4;
+  }
+  return null;
+}
+let _rng = 12345;
+function rnd() { _rng |= 0; _rng = (_rng + 0x6D2B79F5) | 0; let t = Math.imul(_rng ^ (_rng >>> 15), 1 | _rng); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
+function randomText(n) {
+  const a = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/';
+  let s = ''; for (let i = 0; i < n; i++) s += a[(rnd() * 64) | 0];
+  return s;
+}
+function parseLiteral(s) {
+  s = s.trim();
+  let m;
+  if ((m = s.match(/^repeat\s*\(\s*'(.*)'\s*,\s*(\d+)\s*\)$/i))) {
+    const out = m[1].repeat(Number(m[2]));
+    if (out.length > 100000) throw new SimError('value too large for this lab (max 100,000 characters)');
+    return out;
+  }
+  if ((m = s.match(/^random_text\s*\(\s*(\d+)\s*\)$/i))) {
+    const n = Number(m[1]); if (n > 100000) throw new SimError('value too large for this lab (max 100,000 characters)');
+    return randomText(n);
+  }
+  if ((m = s.match(/^'(.*)'$/))) return m[1];
+  if (/^-?\d+(\.\d+)?$/.test(s)) return Number(s);
+  if (/^null$/i.test(s)) return null;
+  throw new SimError(`could not read value ${s}`, { hint: "Quote text with single quotes: 'alice'. For long text use repeat('ab', 3000) or random_text(5000)." });
+}
+function splitTop(s) {
+  const out = []; let cur = '', q = false, d = 0;
+  for (const ch of s) {
+    if (ch === "'") q = !q;
+    if (!q && ch === '(') d++;
+    if (!q && ch === ')') d--;
+    if (ch === ',' && !q && d === 0) { out.push(cur); cur = ''; } else cur += ch;
+  }
+  if (cur.trim()) out.push(cur);
+  return out;
+}
+function evalExpr(expr, data) {
+  const m = expr.match(/^(\w+)\s*([+\-*])\s*(-?\d+)$/);
+  if (m && COLS.includes(m[1].toLowerCase())) {
+    const a = Number(data[m[1].toLowerCase()]), b = Number(m[3]);
+    return m[2] === '+' ? a + b : m[2] === '-' ? a - b : a * b;
+  }
+  if (COLS.includes(expr.toLowerCase())) return data[expr.toLowerCase()];
+  return parseLiteral(expr);
+}
+function cmpKey(a, b) { for (let i = 0; i < Math.max(a.length, b.length); i++) { const c = cmp(a[i], b[i]); if (c) return c; } return 0; }
+function cmp(a, b) {
+  if (a === b) return 0;
+  if (a == null) return 1; if (b == null) return -1;
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a) < String(b) ? -1 : 1;
+}
+function fmtVal(v) { return v == null ? 'NULL' : typeof v === 'string' ? `'${v.length > 24 ? v.slice(0, 12) + '…' : v}'` : String(v); }
+function fmtNotes(v) { return v == null ? null : v.length > 24 ? `${v.slice(0, 14)}… (${v.length} chars)` : v; }
+function fmtRow(d) { return `{${d.id}, ${fmtVal(d.name)}, ${d.balance}${d.notes != null ? ', notes ' + d.notes.length + ' chars' : ''}}`; }
+
+if (typeof module !== 'undefined') module.exports = { MiniPG, tidStr };
+const ROWS7 = "INSERT INTO accounts VALUES (4, 'dave', 400), (5, 'erin', 500), (6, 'frank', 600), (7, 'grace', 700), (8, 'heidi', 800), (9, 'ivan', 900), (10, 'judy', 1000)";
+const TOURS = [
+  { id: 'pages', blurb: "What a table looks like on disk, one 8 KB page at a time.", tags: ["8 KB pages", "line pointers", "tuples"], group: 'Storage', title: 'Pages', panels: {},
+    intro: 'Postgres stores every table as a file split into 8 KB pages. Every row you insert lands on one of them, and almost everything in this series happens inside a page. Here a page is shrunk to hold just 4 rows, so you can watch it fill up.',
+    steps: [
+      { note: 'This is page 0 of a table called accounts, holding three rows. The strip across the top is a map of the page, from its first byte on the left to its last byte on the right.', focus: 'slotbar' },
+      { note: 'The page starts with a small header (hdr). After it comes an array of line pointers: numbered slots 1, 2, 3, each recording where on the page a row starts. This array grows from the left.', focus: 'lps' },
+      { note: 'The rows themselves, which Postgres calls tuples, are packed in from the right-hand end. The gap in the middle is free space. A page is full when the two sides meet.', focus: 'tuples' },
+      { sql: "INSERT INTO accounts VALUES (4, 'dave', 400)", note: 'dave got line pointer 4, and his tuple was packed in next to carol\'s. The free space is gone: page 0 is full.' },
+      { sql: "INSERT INTO accounts VALUES (5, 'erin', 500)", note: 'There was no room on page 0, so the table grew a second page. A table is simply a list of pages kept in one file on disk: block 0, block 1, and so on.' },
+      { sql: 'SELECT * FROM accounts', note: 'Reading the whole table is a sequential scan: page 0, then page 1, slot by slot. It\'s how Postgres reads any table when no index can help.' },
+    ] },
+  { id: 'ctid', blurb: "Every row has a physical address. Why it changes, and why you shouldn't store it.", tags: ["ctid", "Tid Scan"], group: 'Storage', title: 'ctid', panels: {},
+    intro: 'Every row has a physical address called its ctid. It\'s how Postgres locates a row among its pages, and indexes are built on top of it.',
+    steps: [
+      { sql: 'SELECT ctid, * FROM accounts', note: 'ctid is a hidden column you can select. (0,2) means page 0, line pointer 2: that\'s bob.', focus: 'ctid' },
+      { sql: "SELECT * FROM accounts WHERE ctid = '(0,3)'", note: 'Given a ctid, Postgres goes straight to the right page and slot without searching. It\'s the fastest way to reach a row, and it\'s exactly what an index relies on: an index stores each key together with the ctid of its row.' },
+      { sql: 'UPDATE accounts SET balance = 250 WHERE id = 2', note: 'bob now appears twice on the page, and the red copy is the old one. An UPDATE doesn\'t overwrite a row; it writes a new copy. The next tour explains why.' },
+      { sql: 'SELECT ctid, * FROM accounts', note: 'bob\'s ctid changed from (0,2) to (0,4), although his id didn\'t. A ctid is a location, not an identity, so never store one in your application. That\'s what primary keys are for.', focus: 'ctid' },
+    ] },
+  { id: 'versions', blurb: "Why an UPDATE leaves the old row behind.", tags: ["MVCC", "xmin", "xmax", "rollback"], group: 'Storage', title: 'MVCC', panels: { txn: true },
+    intro: 'Postgres never changes a row in place. Each change writes a new version, stamped with the ID of the transaction that made it. This design is called MVCC, multi-version concurrency control.',
+    steps: [
+      { sql: 'SELECT ctid, xmin, xmax, * FROM accounts', note: 'Every tuple starts with a header. xmin is the ID of the transaction that inserted it, here 100. xmax is the ID of the transaction that deleted it, and 0 means nobody has.', focus: 'hdr' },
+      { sql: 'UPDATE accounts SET balance = 150 WHERE id = 1', note: 'Transaction 101 did two things. It set xmax = 101 on the old alice, and it inserted a new alice with xmin = 101. The old version\'s t_ctid now points at the new one, (0,4), so Postgres can follow the trail.' },
+      { sql: 'SELECT ctid, xmin, xmax, * FROM accounts', note: 'Only the new alice comes back. The old version is still on the page, but the transaction that replaced it has committed, so every query skips it. Leftover versions like this are what "table bloat" means.' },
+      { sql: 'DELETE FROM accounts WHERE id = 3', note: 'A DELETE doesn\'t erase anything either. It only sets xmax = 102 on carol.' },
+      { sql: 'BEGIN', note: 'Now an explicit transaction, so we can undo it.' },
+      { sql: "INSERT INTO accounts VALUES (4, 'dave', 400)", note: 'dave was inserted by transaction 103 on a new page. He\'s amber: written to the page, but his transaction hasn\'t committed.' },
+      { sql: 'ROLLBACK', note: 'Rolling back doesn\'t remove dave either. Postgres only records transaction 103 as aborted in its commit log (pg_xact), and from then on every reader treats dave as never inserted.', focus: 'txn' },
+    ] },
+  { id: 'snapshots', blurb: "How a query avoids seeing half-finished transactions.", tags: ["visibility", "pg_xact", "hint bits"], group: 'Concurrency', title: 'Snapshots', sessions: 2, panels: { txn: true },
+    intro: 'Two connections, A and B, use the same table. Why doesn\'t B see A\'s half-finished work? Every query takes a snapshot: a record of which transactions had finished when it started.',
+    steps: [
+      { s: 'A', sql: 'BEGIN', note: 'A opened a transaction. It has no ID yet: Postgres hands one out only on the first write.' },
+      { s: 'A', sql: 'UPDATE accounts SET balance = 0 WHERE id = 2', note: 'A got transaction ID 101. bob now has two versions: the old one with xmax 101, and the new one with xmin 101. Both are amber because 101 hasn\'t finished.' },
+      { s: 'B', sql: 'SELECT * FROM accounts', note: 'When B\'s query started, 101 was still running, so it\'s on the snapshot\'s "in progress" list. B ignores the new bob (inserted by an unfinished transaction) and still sees the old one (its delete hasn\'t happened yet, as far as B is concerned).', focus: 'txn' },
+      { s: 'A', sql: 'SELECT * FROM accounts', note: 'A sees its own change. Rows written by your own transaction are visible to you before you commit.' },
+      { s: 'A', sql: 'COMMIT', note: 'Committing flips a single entry in pg_xact: 101 → committed. No tuple is touched.', focus: 'txn' },
+      { s: 'B', sql: 'SELECT * FROM accounts', note: 'Same tuples, new verdicts. B\'s new snapshot counts 101 as committed, so old bob is dead and new bob is live. Notice the little "c" marks: the first reader to learn that 101 committed caches that fact on each tuple as a "hint bit", so later readers needn\'t look it up.' },
+    ] },
+  { id: 'isolation', blurb: "When a snapshot is taken, and how long it lasts.", tags: ["read committed", "repeatable read"], group: 'Concurrency', title: 'Isolation levels', sessions: 2, panels: { txn: true },
+    intro: 'When is a snapshot taken, and how long is it kept? That\'s the difference between the two isolation levels most apps use.',
+    steps: [
+      { s: 'B', sql: 'BEGIN ISOLATION LEVEL REPEATABLE READ', note: 'B starts a REPEATABLE READ transaction. No snapshot yet.' },
+      { s: 'B', sql: 'SELECT * FROM accounts WHERE id = 3', note: 'The snapshot was taken at this first query, not at BEGIN. B will reuse it for the rest of the transaction.' },
+      { s: 'A', sql: 'UPDATE accounts SET balance = 999 WHERE id = 3', note: 'A runs without BEGIN, so the statement is its own transaction (101) and commits immediately.' },
+      { s: 'B', sql: 'SELECT * FROM accounts WHERE id = 3', note: 'Still 300. B is reusing its old snapshot, and 101 started after it was taken, so 101 doesn\'t count.' },
+      { s: 'B', sql: 'COMMIT', note: 'B\'s snapshot is released.' },
+      { s: 'B', sql: 'BEGIN', note: 'A plain BEGIN uses the default level, READ COMMITTED.' },
+      { s: 'B', sql: 'SELECT * FROM accounts WHERE id = 3', note: 'Now B sees 999.' },
+      { s: 'A', sql: 'UPDATE accounts SET balance = 1 WHERE id = 3', note: 'A commits another change while B\'s transaction is still open.' },
+      { s: 'B', sql: 'SELECT * FROM accounts WHERE id = 3', note: 'B sees 1, inside the same transaction. Under READ COMMITTED every statement takes a fresh snapshot.' },
+      { s: 'B', sql: 'COMMIT', note: 'In short: REPEATABLE READ keeps one snapshot for the whole transaction; READ COMMITTED takes a new one per statement.' },
+    ] },
+  { id: 'locks', blurb: "What happens when two transactions update the same row.", tags: ["row locks", "serialization errors"], group: 'Concurrency', title: 'Row locks', sessions: 2, panels: { txn: true },
+    intro: 'Two transactions try to update the same row. Postgres has no separate lock table for rows: the lock is the xmax field you already know.',
+    steps: [
+      { s: 'A', sql: 'BEGIN', note: 'A opened a transaction.' },
+      { s: 'A', sql: 'UPDATE accounts SET balance = balance - 50 WHERE id = 1', note: 'A is transaction 101 and set xmax = 101 on alice\'s current version. While 101 is running, that xmax also works as a lock on the row.' },
+      { s: 'B', sql: 'UPDATE accounts SET balance = balance - 30 WHERE id = 1', note: 'B found the same version, saw xmax 101 still running, and has to wait. Real Postgres would pause B here; this lab stops the statement instead.' },
+      { s: 'A', sql: 'COMMIT', note: 'A commits; alice is now 50.' },
+      { s: 'B', sql: 'UPDATE accounts SET balance = balance - 30 WHERE id = 1', note: 'B now sees A\'s version (50) and updates that one, to 20. Neither update was lost.' },
+      { s: 'B', sql: 'BEGIN ISOLATION LEVEL REPEATABLE READ', note: 'The same race again, this time under REPEATABLE READ.' },
+      { s: 'B', sql: 'SELECT * FROM accounts WHERE id = 1', note: 'B\'s snapshot is fixed with alice at 20.' },
+      { s: 'A', sql: 'UPDATE accounts SET balance = 0 WHERE id = 1', note: 'A commits a newer version of alice.' },
+      { s: 'B', sql: 'UPDATE accounts SET balance = balance + 5 WHERE id = 1', note: 'B\'s snapshot still shows alice at 20, but someone B can\'t see has already replaced that version. Updating it would silently undo A\'s change, so Postgres refuses with a serialization error.' },
+      { s: 'B', sql: 'ROLLBACK', note: 'Apps using REPEATABLE READ are expected to catch this error and retry the whole transaction.' },
+    ] },
+  { id: 'vacuum', blurb: "How dead rows are removed and their space reused.", tags: ["dead tuples", "space reuse"], group: 'Cleanup', title: 'VACUUM', panels: { txn: true },
+    intro: 'Dead versions stay on their pages until VACUUM removes them. Normally autovacuum runs it for you in the background.',
+    steps: [
+      { sql: 'DELETE FROM accounts WHERE id = 2', note: 'bob is dead: deleted by transaction 101, which committed.' },
+      { sql: 'BEGIN', note: 'A transaction we\'ll throw away.' },
+      { sql: "INSERT INTO accounts VALUES (4, 'dave', 400)", note: 'dave is inserted by transaction 102.' },
+      { sql: 'ROLLBACK', note: 'Transaction 102 aborted, so dave is dead too: he never really existed.' },
+      { sql: 'VACUUM', note: 'VACUUM found both dead tuples, freed their space, and marked their line pointers unused.' },
+      { sql: "INSERT INTO accounts VALUES (5, 'erin', 500)", note: 'erin took line pointer 2, bob\'s old slot. VACUUM doesn\'t shrink the file; it makes the space inside it reusable.' },
+    ] },
+  { id: 'horizon', blurb: "How one open transaction can hold back cleanup everywhere.", tags: ["removal horizon", "bloat"], group: 'Cleanup', title: 'Long transactions', sessions: 2, panels: { txn: true },
+    intro: 'VACUUM can only remove a dead row once no running transaction could still need it. One forgotten transaction can hold back cleanup for the whole database.',
+    steps: [
+      { s: 'B', sql: 'BEGIN ISOLATION LEVEL REPEATABLE READ', note: 'B opens a transaction that will stay open for a while.' },
+      { s: 'B', sql: 'SELECT * FROM accounts', note: 'B\'s snapshot is now fixed, and its oldest-needed transaction ID (its xmin) is advertised to everyone.', focus: 'txn' },
+      { s: 'A', sql: 'DELETE FROM accounts WHERE id = 2', note: 'Transaction 101 deleted bob and committed. Any new query will skip him.' },
+      { s: 'A', sql: 'VACUUM', note: 'VACUUM kept bob. B\'s snapshot was taken before 101 committed, so B may still read him. VACUUM\'s limit, the "removal horizon", is set by the oldest snapshot still open.' },
+      { s: 'B', sql: 'SELECT * FROM accounts', note: 'Proof: B still sees bob.' },
+      { s: 'B', sql: 'COMMIT', note: 'B finally finishes.' },
+      { s: 'A', sql: 'VACUUM', note: 'The horizon moved past 101, so bob is removed. Watch for "idle in transaction" connections in production: they cause exactly this.' },
+    ] },
+  { id: 'index', blurb: "How a B-tree finds a row without reading the whole table.", tags: ["B-tree", "seq scan vs index scan"], group: 'B-tree indexes', title: 'B-tree index', panels: { index: true },
+    intro: 'An index is a separate structure that maps values to ctids, so Postgres can find rows without reading every page. The default kind, and the only one in this series, is the B-tree.',
+    steps: [
+      { sql: ROWS7, note: 'Ten rows now, spread over three pages.' },
+      { sql: 'SELECT * FROM accounts WHERE id = 7', note: 'With no index, finding one row means a sequential scan: read all 3 pages and check all 10 rows.' },
+      { sql: 'CREATE INDEX ON accounts(id)', note: 'The index is a B-tree in its own file. Its leaf pages hold every id in sorted order, each with the ctid of its row. The root page says which leaf covers which range of ids.', focus: 'index' },
+      { sql: 'SELECT * FROM accounts WHERE id = 7', note: 'Read the root, follow it to the leaf holding 7, take the ctid (1,3), and read just that heap page. Here that\'s 3 pages either way, but the index path stays about the same size as the table grows, while a sequential scan grows with it.' },
+      { sql: 'SELECT * FROM accounts WHERE id >= 8', note: 'Ranges work too: the leaf entries are sorted, so Postgres finds 8 and reads along the leaf.' },
+      { sql: 'SELECT * FROM accounts WHERE balance > 500', note: 'There\'s no index on balance, so it\'s a sequential scan again. An index only helps queries that filter on its column.' },
+    ] },
+  { id: 'multicol', blurb: "One index over several columns, and why their order matters.", tags: ["column order","leading column"], group: 'B-tree indexes', title: 'Multicolumn indexes', panels: { index: true },
+    intro: 'One B-tree can cover several columns. It sorts by the first column, then by the second within each value of the first. That order decides which queries it can help.',
+    steps: [
+      { sql: "INSERT INTO accounts VALUES (4, 'alice', 50), (5, 'bob', 75), (6, 'alice', 900), (7, 'carol', 20), (8, 'bob', 400), (9, 'alice', 300), (10, 'dave', 100), (11, 'erin', 700), (12, 'frank', 800)", note: 'People can now hold several accounts: alice has four, bob three.' },
+      { sql: 'CREATE INDEX ON accounts(name, balance)', note: 'Entries are sorted by name, and by balance within each name, like a phone book sorted by surname and then first name. All of alice\'s accounts sit together, smallest balance first.', focus: 'index' },
+      { sql: "SELECT * FROM accounts WHERE name = 'alice' AND balance > 200", note: 'Both conditions steer the search: jump to alice, then to balance > 200 within her entries. Only the 2 matching entries were read.' },
+      { sql: "SELECT * FROM accounts WHERE name = 'bob'", note: 'The first column on its own works too, because all of bob\'s entries are next to each other.' },
+      { sql: 'SELECT * FROM accounts WHERE balance > 500', note: 'balance on its own can\'t use this index. High balances are scattered across every name, so the sort order doesn\'t help, and Postgres falls back to a sequential scan. (Postgres 18 can sometimes "skip scan" such an index when the first column has few distinct values; this lab doesn\'t model that.)' },
+      { sql: 'DROP INDEX accounts_name_balance_idx', note: 'Now let\'s build the same index with the columns the other way round.' },
+      { sql: 'CREATE INDEX ON accounts(balance, name)', note: 'Sorted by balance first. alice\'s accounts are now spread across the index.', focus: 'index' },
+      { sql: "SELECT * FROM accounts WHERE name = 'alice' AND balance > 200", note: 'Same answer, more work. Only balance > 200 could steer the search, so Postgres read all 6 entries in that range and checked the name on each one. Rule of thumb: put columns you compare with = first, and a range column (<, >, BETWEEN) last.' },
+    ] },
+  { id: 'deadidx', blurb: "Why every index slows down writes and collects dead entries.", tags: ["write amplification", "stale entries"], group: 'B-tree indexes', title: 'Dead index entries', panels: { index: true },
+    intro: 'An index entry is just a key and a ctid. It knows nothing about xmin or xmax, so it can\'t tell live rows from dead ones.',
+    steps: [
+      { sql: 'CREATE INDEX ON accounts(id)', note: 'One index on id.' },
+      { sql: 'CREATE INDEX ON accounts(balance)', note: 'A second index, on balance.' },
+      { sql: 'UPDATE accounts SET balance = 110 WHERE id = 1', note: 'The new version of alice got an entry in both indexes, even in the id index, although id didn\'t change. Each index needs to know the new ctid. This is why every extra index slows down writes.', focus: 'index' },
+      { sql: 'UPDATE accounts SET balance = 120 WHERE id = 1', note: 'Another update, another entry in each index. Page 0 was full, so Postgres first cleaned it in passing: the oldest alice was removed, leaving a "dead" line pointer that indexes still point at.' },
+      { sql: 'SELECT * FROM accounts WHERE id = 1', note: 'The index has three entries for id 1. Postgres had to follow all three to the heap to find the one live version, because only the heap knows what\'s alive.' },
+      { sql: 'VACUUM', note: 'VACUUM removed the stale entries from both indexes first, and only then freed the heap slots. Doing it the other way round could leave an index entry pointing at a slot reused by some other row.' },
+      { sql: 'SELECT * FROM accounts WHERE id = 1', note: 'One entry, one heap visit.' },
+    ] },
+  { id: 'ios', blurb: "When Postgres can answer from the index alone, and how INCLUDE makes that possible for more queries.", tags: ["visibility map","heap fetches","INCLUDE"], group: 'B-tree indexes', title: 'Index-only scans', panels: { index: true },
+    intro: 'If a query only needs columns the index already has, can Postgres skip the table entirely? Sometimes. It needs the visibility map, and an index that holds every column the query asks for.',
+    steps: [
+      { sql: ROWS7, note: 'Ten rows over three pages.' },
+      { sql: 'CREATE INDEX ON accounts(id)', note: 'An index on id.' },
+      { sql: 'SELECT id FROM accounts WHERE id >= 5', note: 'Only id is needed, and the index contains it. Yet Postgres still visited the heap for all 6 rows ("Heap Fetches: 6"). The index can\'t say whether a row is visible to this query, so each one had to be checked in the table.' },
+      { sql: 'VACUUM', note: 'Besides cleaning, VACUUM maintains the visibility map: one bit per page meaning "every row here is visible to every transaction". All three pages are now marked all-visible.', focus: 'vm' },
+      { sql: 'SELECT id FROM accounts WHERE id >= 5', note: 'Heap Fetches: 0. For each entry Postgres checked the page\'s bit, found it set, and returned the id straight from the index.' },
+      { sql: 'SELECT id, balance FROM accounts WHERE id >= 5', note: 'Ask for balance as well and it\'s an ordinary Index Scan again. balance isn\'t in the index, so every row needs a heap visit, all-visible or not.' },
+      { sql: 'DROP INDEX accounts_id_idx', note: 'Let\'s replace the index with one that also carries balance.' },
+      { sql: 'CREATE INDEX ON accounts(id) INCLUDE (balance)', note: 'INCLUDE stores balance in every leaf entry next to the id. The tree is still sorted and searched by id only; balance just rides along. That makes it a "covering" index for queries that need id and balance.', focus: 'index' },
+      { sql: 'SELECT id, balance FROM accounts WHERE id >= 5', note: 'An index-only scan again, with Heap Fetches: 0. Both columns came straight from the index.' },
+      { sql: 'UPDATE accounts SET balance = 0 WHERE id = 9', note: 'The cost: balance is now stored in an index, so changing it can\'t be a HOT update. The index needed a new entry carrying the new balance, and page 2 lost its all-visible bit.', focus: 'index' },
+      { sql: 'SELECT id, balance FROM accounts WHERE id >= 5', note: 'Page 1 still skips the heap; page 2 needs heap fetches again until the next VACUUM. INCLUDE suits columns you read often and change rarely.' },
+    ] },
+  { id: 'hot', blurb: "How some updates skip the indexes entirely.", tags: ["heap-only tuples", "pruning", "redirects"], group: 'B-tree indexes', title: 'HOT updates', sessions: 2, panels: { index: true },
+    intro: 'Updating a row normally means adding an entry to every index. HOT (heap-only tuple) updates skip that, as long as no indexed column changes and the new version fits on the same page.',
+    steps: [
+      { s: 'A', sql: 'CREATE INDEX ON accounts(id)', note: 'An index on id. balance isn\'t indexed, so changing it changes no index key.' },
+      { s: 'B', sql: 'BEGIN ISOLATION LEVEL REPEATABLE READ', note: 'B will keep an old snapshot so we can see the update from both sides.' },
+      { s: 'B', sql: 'SELECT * FROM accounts WHERE id = 1', note: 'B\'s snapshot is fixed with alice at 100.' },
+      { s: 'A', sql: 'UPDATE accounts SET balance = 150 WHERE id = 1', note: 'A HOT update: no indexed column changed and page 0 had room. The new version (0,4) is marked heap-only, and no index entry was written. The index still says 1 → (0,1), and (0,1) points on to (0,4).', focus: 'index' },
+      { s: 'A', sql: 'SELECT * FROM accounts WHERE id = 1', note: 'The index led to (0,1), which A can\'t see, so Postgres followed the chain inside the page to (0,4). One index entry, two tuples, one page.' },
+      { s: 'B', sql: 'SELECT * FROM accounts WHERE id = 1', note: 'Same entry, same chain, but B stops at (0,1), the version its snapshot sees.' },
+      { s: 'B', sql: 'COMMIT', note: 'Now nobody needs the 100 version of alice.' },
+      { s: 'A', sql: 'UPDATE accounts SET balance = 160 WHERE id = 1', note: 'Page 0 was full, so Postgres cleaned it in passing ("pruning"). The old alice was removed, but the index still points at slot 1, so slot 1 stayed behind as a redirect to slot 4. That freed room for another HOT update, at (0,5). No VACUUM needed.' },
+      { s: 'A', sql: 'UPDATE accounts SET id = 11 WHERE id = 2', note: 'Changing an indexed column can\'t be HOT: the index must learn the new key 11. Pruning first removed slot 4 entirely (no index points at a heap-only tuple) and moved the redirect on to slot 5.' },
+      { s: 'A', sql: 'VACUUM', note: 'bob\'s old version wasn\'t HOT, so it needed VACUUM: remove the index entry for 2 first, then free its slot.' },
+      { s: 'A', sql: 'SELECT * FROM accounts WHERE id = 1', note: 'Index → slot 1 → redirect → slot 5. Three updates to alice, and still a single index entry.' },
+    ] },
+  { id: 'fillfactor', blurb: "Leaving space on purpose to make updates cheaper.", tags: ["reserved space", "HOT"], group: 'Space', title: 'Fillfactor', panels: { index: true },
+    intro: 'HOT updates need free space on the row\'s own page. Fillfactor tells INSERT to leave some empty, on purpose.',
+    steps: [
+      { sql: 'CREATE INDEX ON accounts(id)', note: 'An index on id, so we can see which updates add index entries.' },
+      { sql: "INSERT INTO accounts VALUES (4, 'dave', 400), (5, 'erin', 500), (6, 'frank', 600), (7, 'grace', 700), (8, 'heidi', 800)", note: 'By default tables use fillfactor 100: pages are packed completely. Pages 0 and 1 are both full.' },
+      { sql: 'UPDATE accounts SET balance = 0 WHERE id = 6', note: 'frank lives on page 1, which is full. His new version had to go to a new page, so it couldn\'t be a HOT update: the index got a second entry for 6.', focus: 'index' },
+      { sql: 'ALTER TABLE accounts SET (fillfactor = 75)', note: 'From now on INSERTs stop at 75% of a page, which here means 3 of 4 slots. The last slot is reserved for updates to rows already on that page. Existing pages are left as they are.' },
+      { sql: "INSERT INTO accounts VALUES (9, 'ivan', 900), (10, 'judy', 1000), (11, 'ken', 1100)", note: 'Page 2 took two more rows and stopped at three, leaving its last slot free. ken went to a new page.' },
+      { sql: 'UPDATE accounts SET balance = 0 WHERE id = 10', note: 'judy\'s page had its reserved slot, so her new version stayed on page 2 as a HOT update, with no new index entry. That\'s the trade: some empty space per page in exchange for cheaper updates.' },
+    ] },
+  { id: 'toast', blurb: "Where values too big for a row end up.", tags: ["compression", "out-of-line storage"], group: 'Space', title: 'TOAST', panels: { toast: true },
+    intro: 'A row has to fit comfortably in a page. When a value is too big, Postgres compresses it, and if that isn\'t enough, moves it out to a separate TOAST table.',
+    steps: [
+      { sql: 'ALTER TABLE accounts ADD COLUMN notes text', note: 'A new text column. Adding a column only changes the table\'s definition: no existing row is rewritten, and old rows simply read as NULL.' },
+      { sql: "INSERT INTO accounts VALUES (4, 'dave', 400, repeat('ab', 3000))", note: '6,000 bytes is well over the ~2 KB limit, but it\'s very repetitive, so compression shrank it to 72 bytes and it stays in the row. The TOAST table is still empty.' },
+      { sql: "INSERT INTO accounts VALUES (5, 'erin', 500, random_text(5000))", note: 'Random text doesn\'t compress, so it moved out of the row: 3 chunks of up to about 2 KB in the TOAST table. The row keeps an 18-byte pointer and stays small.', focus: 'toast' },
+      { sql: 'SELECT id, name FROM accounts WHERE id = 5', note: 'notes wasn\'t requested, so the TOAST table was never touched.' },
+      { sql: 'SELECT * FROM accounts WHERE id = 5', note: 'Now notes is needed, so Postgres looked up the chunks and glued them back together. On tables with big columns, SELECT * can cost far more than naming the columns you need.' },
+      { sql: 'UPDATE accounts SET balance = 1 WHERE id = 5', note: 'The new row version reuses the same TOAST pointer. Two versions of the row, one copy of the big value.' },
+      { sql: "UPDATE accounts SET notes = 'short now' WHERE id = 5", note: 'Replacing notes marked the old chunks deleted (they have xmax too), and the short new value is stored in the row.' },
+      { sql: 'VACUUM', note: 'VACUUM cleans the table and its TOAST table together. The chunks are gone.' },
+    ] },
+  { id: 'buffers', blurb: "How pages move between disk and memory.", tags: ["cache", "clock sweep", "dirty pages", "checkpoints"], group: 'Memory', title: 'Shared buffers', buffers: 4, first: 'buffers', panels: { buffers: true },
+    intro: 'Postgres never reads or changes a page directly on disk. Every page is first copied into shared memory, into a pool of slots called shared buffers. This tour uses just 4 of them.',
+    steps: [
+      { sql: 'SELECT * FROM accounts', note: 'The server has just started, so every buffer is empty. Page 0 wasn\'t cached, so it was read from disk into buffer 0.', focus: 'buffers' },
+      { sql: 'SELECT * FROM accounts', note: 'Same page, and this time it was already in memory: a cache hit. Its usage count (the dots) went up. Popular pages keep high counts.' },
+      { sql: 'UPDATE accounts SET balance = 0 WHERE id = 1', note: 'The change happened only in memory. Buffer 0 is now dirty: the copy of page 0 on disk is out of date. (A separate log, the WAL, protects the change in case of a crash.)' },
+      { sql: ROWS7, note: 'The table grew by two pages. New pages are created directly in memory, so there was nothing to read. Three buffers are now dirty.' },
+      { sql: 'CREATE INDEX ON accounts(id)', note: 'Building an index writes it straight to its file, bypassing the buffers. On disk it exists, but none of its pages are cached yet.' },
+      { sql: 'SELECT * FROM accounts WHERE id = 9', note: 'The index root took the last free buffer. The leaf needed an eviction: the clock hand swept round lowering usage counts until one reached zero, skipping the root it was holding. That victim was dirty, so it was written to disk first. Then the leaf pointed to the very page just evicted, so it was read straight back.' },
+      { sql: 'CHECKPOINT', note: 'A checkpoint writes every dirty buffer to disk. Now evicting any of them costs nothing.' },
+      { sql: 'SELECT * FROM accounts', note: 'Reading 3 pages through 4 buffers: some hits, some reads, some evictions. Real servers have thousands of buffers, and a good one serves 99% of reads from memory.' },
+    ] },
+];
+
+const GROUPS = {
+  Storage: 'How rows are laid out on disk.',
+  Concurrency: 'How many transactions share one table without seeing each other\'s unfinished work.',
+  Cleanup: 'Where dead rows go, and what stops them from going.',
+  'B-tree indexes': 'How Postgres finds rows quickly, and what that costs. Every index here is a B-tree, the default kind.',
+  Space: 'How rows fit on pages, and how to tune it.',
+  Memory: 'How pages move between disk and RAM.',
+};
+// ===== Tech, Blueprinted: guided series UI =====
+const db = new MiniPG(8);
+const PANELS = [['txn', 'Transactions'], ['index', 'B-tree indexes'], ['buffers', 'Shared buffers'], ['trace', 'Execution details']];
+let overrides = {}; // panel -> true/false set by the reader, applies to every tour
+let showBuf = true;
+let cur = { ti: 0, k: 0 };
+let view = 'site';
+let last = null;
+try { last = JSON.parse(localStorage.getItem('ip-last') || 'null'); } catch (e) { }
+let done = new Set();
+try { done = new Set(JSON.parse(localStorage.getItem('ip-done') || '[]')); } catch (e) { }
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const STATE_LABEL = { live: 'live', dead: 'dead', uncommitted: 'not committed yet', locked: 'being changed', aborted: 'aborted' };
+const TOUCH_LABEL = { vis: 'read', invis: 'skipped: not visible', skip: 'read, filtered out', new: 'written', del: 'xmax set', keep: 'kept by VACUUM' };
+const BTAG = { hit: 'hit', read: 'read in', new: 'new block', flushed: 'written out' };
+
+const tour = () => TOURS[cur.ti];
+const lvl = () => cur.ti; // features appear as the series teaches them
+const L = { hdr: 2, hints: 3, vm: 10, hot: 11 };
+function panelOn(p) {
+  if (overrides[p] != null) return overrides[p];
+  if (p === 'toast') return !!tour().panels.toast || db.toast.pages.length > 0;
+  return !!tour().panels[p];
+}
+
+// ---------- navigation ----------
+function goTo(ti, k, opts = {}) {
+  const t = TOURS[ti];
+  k = Math.max(0, Math.min(k, t.steps.length));
+  db.sessions.A.iso = 'READ COMMITTED'; db.sessions.B.iso = 'READ COMMITTED';
+  db.nBuffers = t.buffers || 8;
+  db.reset(true);
+  for (let j = 0; j < k; j++) { const st = t.steps[j]; if (st.sql) db.run(st.s || 'A', st.sql); }
+  if (k === 0) db.trace = null;
+  if (k === 0 || !t.steps[k - 1].sql) db.clearTouch();
+  cur = { ti, k }; view = 'tour';
+  last = { ti, k }; try { localStorage.setItem('ip-last', JSON.stringify(last)); } catch (e) { }
+  if (k === t.steps.length) { done.add(t.id); try { localStorage.setItem('ip-done', JSON.stringify([...done])); } catch (e) { } }
+  try { history.replaceState(null, '', `#${t.id}/${k}`); } catch (e) { }
+  render();
+  if (opts.top) window.scrollTo({ top: 0 });
+}
+const next = () => { const t = tour(); if (cur.k < t.steps.length) goTo(cur.ti, cur.k + 1); else if (cur.ti < TOURS.length - 1) goTo(cur.ti + 1, 0, { top: true }); else showHome(); };
+const back = () => { if (cur.k > 0) goTo(cur.ti, cur.k - 1); else if (cur.ti > 0) goTo(cur.ti - 1, TOURS[cur.ti - 1].steps.length, { top: true }); };
+
+// ---------- contents page ----------
+function showHome() {
+  view = 'home';
+  try { history.replaceState(null, '', '#postgres'); } catch (e) { }
+  render(); window.scrollTo({ top: 0 });
+}
+function showSite() {
+  view = 'site';
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { }
+  render(); window.scrollTo({ top: 0 });
+}
+const SOON = [
+  { name: 'Kafka', blurb: 'How a distributed log stores, replicates and hands out messages.', tags: ['partitions', 'offsets', 'log segments', 'consumer groups', 'replication'] },
+  { name: 'Redis', blurb: 'How a single-threaded server stays fast, and what happens to keys under memory pressure.', tags: ['event loop', 'data structures', 'expiry', 'eviction', 'persistence'] },
+  { name: 'Git', blurb: 'What a commit really is, and how branches, merges and packfiles work underneath.', tags: ['objects', 'refs', 'the index', 'merges', 'packfiles'] },
+  { name: 'Linux', blurb: 'Processes, memory and files, from a system call down to the page cache.', tags: ['processes', 'virtual memory', 'page cache', 'file descriptors'] },
+];
+function renderSite() {
+  const nDone = TOURS.filter(t => done.has(t.id)).length;
+  const resumable = last && TOURS[last.ti] && !(last.ti === 0 && last.k === 0) && !(done.has(TOURS[last.ti].id) && last.k === TOURS[last.ti].steps.length);
+  const art = document.querySelector('#home .hero-art');
+  const artHtml = `<div class="hero-art" aria-hidden="true">
+      <div class="ha-head"><b>Page 0</b><span>accounts, 8 KB</span></div>
+      <div class="ha-bar"><div class="sb-hdr" style="width:12%">hdr</div><div class="sb-lp" style="width:7%">1</div><div class="sb-lp" style="width:7%">2</div><div class="sb-lp" style="width:7%">3</div><div class="sb-free">free</div><div class="sb-t live" style="width:13%">t3</div><div class="sb-t dead" style="width:13%">t2</div><div class="sb-t live" style="width:13%">t1</div></div>
+      <div class="ha-rows">
+        <div class="ha-row"><div class="lpn">lp 1</div><div class="tuple live"><div class="t1"><span class="tid">(0,1)</span><span class="state">live</span></div><div class="hdrs"><span>xmin <b>100</b></span><span>xmax <b>0</b></span></div><div class="data">id=1 name='alice'</div></div></div>
+        <div class="ha-row"><div class="lpn">lp 2</div><div class="tuple dead"><div class="t1"><span class="tid">(0,2)</span><span class="state">dead</span></div><div class="hdrs"><span>xmin <b>100</b></span><span>xmax <b>101</b></span><span>t_ctid <b>→ (0,3)</b></span></div><div class="data">id=2 name='bob' balance=200</div></div></div>
+        <div class="ha-row"><div class="lpn">lp 3</div><div class="tuple live"><div class="t1"><span class="tid">(0,3)</span><span class="state">live</span></div><div class="hdrs"><span>xmin <b>101</b></span><span>xmax <b>0</b></span></div><div class="data">id=2 name='bob' balance=250</div></div></div>
+      </div></div>`;
+  const pgSteps = TOURS.reduce((a, t) => a + t.steps.length, 0);
+  $('#site').innerHTML = `
+    <section class="site-hero">
+      <div>
+        <p class="kick">Software internals, drawn open</p>
+        <h1>Every part labelled. Every step drawn.</h1>
+        <p class="lede">Guided, step-by-step drawings of the systems you use every day. Each step runs a real command against a small simulation and shows exactly what changed inside. No setup, nothing to install.</p>
+        <div class="cta">
+          ${resumable ? `<button class="btn primary" id="s-resume">Continue: ${esc(TOURS[last.ti].title)}, step ${last.k}</button>` : `<button class="btn primary" id="s-start">Start with Postgres</button>`}
+          <a class="btn" href="#soon" id="s-soon">See what's coming</a>
+        </div>
+      </div>
+      ${artHtml}
+    </section>
+    <div class="sec-head"><h2>Systems</h2><span>One series per system. Each tour takes a few minutes.</span></div>
+    <div class="plates">
+      <a class="plate" href="#postgres" id="s-pg">
+        <div class="pb">
+          <div class="pt"><b>Postgres</b><span class="status live">available</span></div>
+          <p class="pd">How a relational database stores rows, keeps transactions apart, finds data with B-trees, cleans up after itself and caches pages in memory.</p>
+          <div class="ptags">${['pages', 'MVCC', 'snapshots', 'B-tree indexes', 'VACUUM', 'HOT', 'TOAST', 'shared buffers'].map(x => `<span>${x}</span>`).join('')}</div>
+        </div>
+        <div class="pf"><span>${TOURS.length} tours</span><span>${pgSteps} steps</span><span class="acc">${nDone ? `${nDone} done` : 'start here'}</span></div>
+      </a>
+      ${SOON.map(s => `<div class="plate soon" id="${s.name === 'Kafka' ? 'soon' : ''}">
+        <div class="pb">
+          <div class="pt"><b>${esc(s.name)}</b><span class="status soon">coming soon</span></div>
+          <p class="pd">${esc(s.blurb)}</p>
+          <div class="ptags">${s.tags.map(x => `<span>${esc(x)}</span>`).join('')}</div>
+        </div>
+        <div class="pf"><span>in preparation</span></div>
+      </div>`).join('')}
+    </div>
+    <div class="sec-head"><h2>How the tours work</h2></div>
+    <div class="how">
+      <div><b>Step, don't read</b><p>Press Next and a real command runs. The drawing updates to show exactly what moved, and a short note explains why.</p></div>
+      <div><b>One idea per tour</b><p>Each tour covers a single concept in a few minutes, in an order where every tour builds on the last.</p></div>
+      <div><b>Nothing to install</b><p>It all runs in your browser. Your progress is saved on this device.</p></div>
+    </div>`;
+  const go = () => goTo(resumable ? last.ti : 0, resumable ? last.k : 0, { top: true });
+  const r = $('#s-resume'), s = $('#s-start'); if (r) r.onclick = go; if (s) s.onclick = () => showHome();
+  $('#s-pg').onclick = e => { e.preventDefault(); showHome(); };
+  $('#s-soon').onclick = e => { e.preventDefault(); const el = $('#soon'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+}
+function renderHome() {
+  const nDone = TOURS.filter(t => done.has(t.id)).length;
+  const resumable = last && TOURS[last.ti] && !(last.ti === 0 && last.k === 0) && !(done.has(TOURS[last.ti].id) && last.k === TOURS[last.ti].steps.length);
+  const firstTodo = TOURS.findIndex(t => !done.has(t.id));
+  const groups = [...new Set(TOURS.map(t => t.group))];
+  const art = `<div class="hero-art" aria-hidden="true">
+      <div class="ha-head"><b>Page 0</b><span>accounts, 8 KB</span></div>
+      <div class="ha-bar"><div class="sb-hdr" style="width:12%">hdr</div><div class="sb-lp" style="width:7%">1</div><div class="sb-lp" style="width:7%">2</div><div class="sb-lp" style="width:7%">3</div><div class="sb-free">free</div><div class="sb-t live" style="width:13%">t3</div><div class="sb-t dead" style="width:13%">t2</div><div class="sb-t live" style="width:13%">t1</div></div>
+      <div class="ha-rows">
+        <div class="ha-row"><div class="lpn">lp 1</div><div class="tuple live"><div class="t1"><span class="tid">(0,1)</span><span class="state">live</span></div><div class="hdrs"><span>xmin <b>100</b></span><span>xmax <b>0</b></span></div><div class="data">id=1 name='alice'</div></div></div>
+        <div class="ha-row"><div class="lpn">lp 2</div><div class="tuple dead"><div class="t1"><span class="tid">(0,2)</span><span class="state">dead</span></div><div class="hdrs"><span>xmin <b>100</b></span><span>xmax <b>101</b></span><span>t_ctid <b>→ (0,3)</b></span></div><div class="data">id=2 name='bob' balance=200</div></div></div>
+        <div class="ha-row"><div class="lpn">lp 3</div><div class="tuple live"><div class="t1"><span class="tid">(0,3)</span><span class="state">live</span></div><div class="hdrs"><span>xmin <b>101</b></span><span>xmax <b>0</b></span></div><div class="data">id=2 name='bob' balance=250</div></div></div>
+      </div></div>`;
+  $('#home').innerHTML = `
+    <a class="back-link" href="#" id="h-back">← All systems</a>
+    <section class="hero">
+      <div>
+        <h1>See what Postgres does with your rows</h1>
+        <p>${TOURS.length} short, guided tours through pages, MVCC, indexes, VACUUM and memory. Each step runs real SQL against a small simulated Postgres and shows exactly what changes inside it. No setup, nothing to type.</p>
+        <div class="cta">
+          ${resumable ? `<button class="btn primary" id="h-resume">Continue: ${esc(TOURS[last.ti].title)}, step ${last.k}</button><button class="btn" id="h-start">Start from tour 1</button>`
+      : `<button class="btn primary" id="h-start">${nDone && firstTodo >= 0 ? `Next up: ${esc(TOURS[firstTodo].title)}` : 'Start with tour 1: Pages'}</button>`}
+        </div>
+        ${nDone ? `<div class="progress-line"><span class="pbar"><i style="width:${Math.round(100 * nDone / TOURS.length)}%"></i></span>${nDone} of ${TOURS.length} tours done</div>` : ''}
+      </div>
+      ${art}
+    </section>
+    ${groups.map(g => `<section class="module"><div><h2>${esc(g)}</h2><p>${esc(GROUPS[g] || '')}</p></div>
+      <div class="cards">${TOURS.map((t, i) => ({ t, i })).filter(x => x.t.group === g).map(({ t, i }) => `
+        <a class="card ${done.has(t.id) ? 'done' : ''} ${resumable && last.ti === i ? 'resume' : ''}" href="#${t.id}/0" data-i="${i}">
+          <span class="ct"><span class="num">${done.has(t.id) ? '✓' : i + 1}</span><b>${esc(t.title)}</b></span>
+          <span class="cb">${esc(t.blurb)}</span>
+          <span class="tags">${t.tags.map(x => `<span>${esc(x)}</span>`).join('')}</span>
+          <span class="cm"><span>${t.steps.length} steps${t.sessions === 2 ? ', two sessions' : ''}</span><span>${resumable && last.ti === i ? 'in progress' : done.has(t.id) ? 'done' : `about ${Math.max(2, Math.round(t.steps.length * 0.5))} min`}</span></span>
+        </a>`).join('')}</div></section>`).join('')}`;
+  $('#h-back').onclick = e => { e.preventDefault(); showSite(); };
+  const st = $('#h-start'); if (st) st.onclick = () => goTo(resumable || !nDone || firstTodo < 0 ? 0 : firstTodo, 0, { top: true });
+  const rs = $('#h-resume'); if (rs) rs.onclick = () => goTo(last.ti, last.k, { top: true });
+  $('#home').querySelectorAll('.card').forEach(a => a.onclick = e => { e.preventDefault(); goTo(+a.dataset.i, 0, { top: true }); });
+}
+
+// ---------- header toggles ----------
+function renderToggles() {
+  const any = Object.values(overrides).some(v => v != null);
+  $('#toggles').innerHTML = `<span class="lbl">Show</span>${PANELS.map(([p, name]) => `<button class="tog" data-p="${p}" aria-pressed="${panelOn(p)}">${name}</button>`).join('')}${any ? '<button class="tog-reset" id="togreset">Use each tour\'s defaults</button>' : ''}`;
+  document.querySelectorAll('.tog').forEach(b => b.onclick = () => { overrides[b.dataset.p] = !panelOn(b.dataset.p); render(); });
+  if (any) $('#togreset').onclick = () => { overrides = {}; render(); };
+}
+
+// ---------- table of contents ----------
+function renderToc() {
+  let html = '', g = null;
+  TOURS.forEach((t, i) => {
+    if (t.group !== g) { if (g) html += '</ol>'; g = t.group; html += `<h3>${esc(g)}</h3><ol>`; }
+    html += `<li class="${done.has(t.id) ? 'done' : ''}"><a href="#${t.id}/0" data-i="${i}" aria-current="${i === cur.ti}"><span class="num">${done.has(t.id) ? '✓' : i + 1}</span>${esc(t.title)}</a></li>`;
+  });
+  $('#toc').innerHTML = html + '</ol>';
+  $('#toc').querySelectorAll('a').forEach(a => a.onclick = e => { e.preventDefault(); goTo(+a.dataset.i, 0, { top: true }); });
+}
+
+// ---------- story ----------
+const fmtNote = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
+function renderStory() {
+  const t = tour(), k = cur.k, n = t.steps.length, st = k > 0 ? t.steps[k - 1] : null;
+  const end = k === n, nextT = TOURS[cur.ti + 1];
+  const opts = TOURS.map((x, i) => `<option value="${i}" ${i === cur.ti ? 'selected' : ''}>${i + 1}. ${esc(x.title)}${done.has(x.id) ? ' ✓' : ''}</option>`).join('');
+  const nextLabel = k === 0 ? 'Start' : !end ? 'Next' : nextT ? `Next tour: ${nextT.title}` : 'Back to all tours';
+  const navHtml = `<button class="btn" id="b-back" ${cur.ti === 0 && k === 0 ? 'disabled' : ''}>Back</button><button class="btn primary" id="b-next">${esc(nextLabel)}</button>`;
+  $('#story').innerHTML = `
+    <select class="toc-select" id="tsel" aria-label="Choose a tour">${opts}</select>
+    <p class="kicker">Tour ${cur.ti + 1} of ${TOURS.length}, ${esc(t.group)}</p>
+    <h1>${esc(t.title)}</h1>
+    <div class="dots" aria-label="Steps">${Array.from({ length: n + 1 }, (_, i) => `<button aria-label="${i === 0 ? 'Introduction' : 'Step ' + i}" class="${i < k ? 'on' : ''} ${i === k ? 'cur' : ''}" data-k="${i}"></button>`).join('')}</div>
+    ${k === 0 ? `<p class="prose">${fmtNote(t.intro)}</p>` : `
+      ${st.sql ? `<div class="ran"><div class="who">${t.sessions === 2 ? `Session ${st.s || 'A'} ran` : 'Ran'}</div><pre>${esc(st.sql)};</pre></div>` : ''}
+      <p class="prose">${fmtNote(st.note)}</p>
+      ${end ? `<p class="prose" style="color:var(--muted)">${nextT ? 'End of this tour.' : 'That\'s the whole series. Revisit any tour from the list.'}</p>` : ''}`}
+    <div class="nav">${navHtml}<span class="keys">← → keys work too</span></div>`;
+  $('#mnav').innerHTML = navHtml.replace(/id="b-/g, 'id="m-');
+  const wire = (pre) => { const b = $(`#${pre}-back`), f = $(`#${pre}-next`); if (b) b.onclick = back; if (f) f.onclick = next; };
+  wire('b'); wire('m');
+  $('#tsel').onchange = e => goTo(+e.target.value, 0, { top: true });
+  $('#story').querySelectorAll('.dots button').forEach(b => b.onclick = () => goTo(cur.ti, +b.dataset.k));
+}
+
+// ---------- results ----------
+function sessionCard(name, active) {
+  const s = db.sessions[name], t = tour();
+  let lastCmd = -1; s.log.forEach((e, i) => { if (e.type === 'cmd') lastCmd = i; });
+  const earlier = s.log.slice(0, Math.max(0, lastCmd)).filter(e => e.type === 'cmd').slice(-3);
+  const latest = lastCmd >= 0 ? s.log.slice(lastCmd) : [];
+  const pill = s.failed ? '<span class="pill fail">failed, needs ROLLBACK</span>' : s.inTx ? `<span class="pill tx">in transaction${s.xid ? ' ' + s.xid : ''}${s.txIso === 'REPEATABLE READ' ? ', repeatable read' : ''}</span>` : '';
+  const snap = s.inTx && s.snapshot ? `snapshot ${db.snapStr(s.snapshot)}` : (active && s.lastSnapshot && db.trace && db.trace.stats ? `used snapshot ${db.snapStr(s.lastSnapshot)}` : '');
+  let out = '';
+  for (const e of latest.slice(1)) {
+    if (e.type === 'rows') out += `<table><thead><tr>${e.cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${e.rows.map(r => `<tr>${r.map(v => `<td>${v == null ? '<span style="color:var(--muted)">null</span>' : esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table><div class="ok">(${e.rows.length} row${e.rows.length === 1 ? '' : 's'})</div>`;
+    else if (e.type === 'ok' || e.type === 'plan') out += `<div class="ok">${esc(e.text)}</div>`;
+    else out += `<div class="${e.type}">${esc(e.text)}</div>${e.hint ? `<div class="hint">${esc(e.hint)}</div>` : ''}`;
+  }
+  const tr = db.trace, showPlan = active && tr && tr.stats && tr.plan;
+  const plan = showPlan ? `<div class="rplan"><span class="plan">${esc(tr.plan.replace(/\s+\[.*\]$/, '').replace(/^(Update|Delete) on accounts → /, ''))}</span><span>${tr.stats.heapPages} heap page${tr.stats.heapPages === 1 ? '' : 's'}</span>${tr.stats.indexPages ? `<span>${tr.stats.indexPages} index page${tr.stats.indexPages === 1 ? '' : 's'}</span><span>${tr.stats.entriesRead} index entr${tr.stats.entriesRead === 1 ? 'y' : 'ies'} read</span>` : ''}<span>${tr.stats.tuplesChecked} tuple${tr.stats.tuplesChecked === 1 ? '' : 's'} checked</span>${db.lastPlan && db.lastPlan.ios ? `<span>Heap Fetches: ${tr.stats.heapFetches}</span>` : ''}${tr.stats.toastPages ? `<span>${tr.stats.toastPages} TOAST page${tr.stats.toastPages === 1 ? '' : 's'}</span>` : ''}</div>` : '';
+  return `<div class="rcard ${active ? 'active' : ''}"><div class="rhead"><b>${t.sessions === 2 ? 'Session ' + name : 'Result'}</b>${pill}<span class="snap">${snap}</span></div>
+    ${earlier.length ? `<div class="earlier">${earlier.map(e => `<div>${esc(e.text)};</div>`).join('')}</div>` : ''}
+    ${latest.length ? `<div class="rcmd">${esc(latest[0].text)};</div><div class="rout">${out}</div>${plan}` : `<div class="rempty">${t.sessions === 2 ? 'Nothing run here yet.' : 'Results appear here as you step through.'}</div>`}</div>`;
+}
+
+// ---------- heap & toast pages ----------
+function notesLine(t) {
+  const tv = t.toast;
+  if (!tv || tv.mode === 'null') return '';
+  if (tv.mode === 'inline') return `<div class="notes">notes ${esc(fmtVal(t.data.notes))}, stored in the row</div>`;
+  if (tv.mode === 'compressed') return `<div class="notes">notes compressed in the row: ${tv.raw} B → ${tv.comp} B</div>`;
+  return `<div class="notes">notes → TOAST pointer: chunk_id ${tv.chunkId}, ${tv.nChunks} chunks, ${tv.payload} B</div>`;
+}
+
+function renderRel(rel, isToast) {
+  const showHdr = isToast || lvl() >= L.hdr, showHints = lvl() >= L.hints, showHot = lvl() >= L.hot, showVm = lvl() >= L.vm, showSize = tour().id === 'toast';
+  const capIns = isToast ? PAGE_CAP : db.insertCap();
+  return rel.pages.map(pg => {
+    const used = pg.lps.filter(l => l.state === 'normal').length;
+    const room = !!db.pageSlot(pg), insRoom = !!db.pageSlot(pg, capIns);
+    const freeLbl = room ? (insRoom ? 'free' : 'reserved') : '';
+    const bar = `<div class="slotbar" aria-hidden="true"><div class="sb-hdr">hdr</div>${pg.lps.map((l, i) => `<div class="sb-lp ${l.state === 'normal' ? '' : l.state}">${i + 1}</div>`).join('')}<div class="sb-free ${freeLbl === 'reserved' ? 'reserved' : ''}">${freeLbl}</div>${pg.lps.map((l, i) => ({ l, i })).filter(x => x.l.state === 'normal').reverse().map(x => `<div class="sb-t ${db.tupleState(x.l.tuple)}">t${x.i + 1}</div>`).join('')}</div>`;
+    const rows = pg.lps.map((lp, i) => {
+      const tid = { p: pg.id, lp: i + 1 }, key = tkey(rel.name, tid);
+      if (lp.state === 'unused') return `<div class="lprow unused"><div class="lpn">lp ${i + 1}</div><div class="lpbox">unused: free for the next row on this page</div></div>`;
+      if (lp.state === 'redirect') return `<div class="lprow redirect"><div class="lpn">lp ${i + 1}</div><div class="lpbox redirect">redirect → lp ${lp.to}. The row that was here is gone; this slot forwards to its newer version because an index still points here.</div></div>`;
+      if (lp.state === 'dead') return `<div class="lprow dead"><div class="lpn">lp ${i + 1}</div><div class="lpbox dead">dead: the row was removed and its space freed, but an index still points at this slot, so it waits for VACUUM.</div></div>`;
+      const t = lp.tuple, st = db.tupleState(t), tc = db.touched[key];
+      const hint = (c, a) => !showHints ? '' : (t.hints[c] ? '<span class="hint" title="hint bit: committed">c</span>' : '') + (t.hints[a] ? '<span class="hint" title="hint bit: aborted">a</span>' : '');
+      const fwd = (t.ctid.p !== tid.p || t.ctid.lp !== tid.lp) ? `→ ${tidStr(t.ctid)}` : tidStr(t.ctid);
+      const hotU = t.hotUpdated && t.xmax && db.status(t.xmax) !== 'aborted';
+      const badges = isToast || !showHot ? '' : [hotU ? '<span class="badge">HOT updated</span>' : '', t.heapOnly ? '<span class="badge solid">heap-only</span>' : ''].join('');
+      const data = isToast ? `chunk_id=${t.data.chunk_id} seq=${t.data.chunk_seq} ${t.data.size} B` : `id=${esc(t.data.id)} name=${esc(fmtVal(t.data.name))} balance=${esc(t.data.balance)}`;
+      return `<div class="lprow"><div class="lpn">lp ${i + 1}</div>
+        <div class="tuple ${st}${tc ? ' touch' : ''}" data-tid="${key}">
+          ${tc && TOUCH_LABEL[tc] ? `<span class="touch-tag">${TOUCH_LABEL[tc]}</span>` : ''}
+          <div class="t1"><span class="tid">${tidStr(tid)}</span><span class="state">${STATE_LABEL[st]}${showSize && !isToast ? ` <span class="size">${db.tupleSize(t)} B</span>` : ''}</span></div>
+          ${showHdr ? `<div class="hdrs"><span>xmin <b>${t.xmin}</b>${hint('xminC', 'xminA')}</span><span>xmax <b>${t.xmax}</b>${t.xmax ? hint('xmaxC', 'xmaxA') : ''}</span>${isToast ? '' : `<span>t_ctid <b>${fwd}</b></span>`}</div>` : ''}
+          <div class="data">${data}</div>
+          ${isToast ? '' : notesLine(t)}
+          ${badges ? `<div class="badges">${badges}</div>` : ''}
+        </div></div>`;
+    }).join('');
+    const head = `<b>Page ${pg.id}</b>${!isToast && showVm && pg.allVisible ? '<span class="vm-badge" title="Visibility map bit set: every row on this page is visible to every transaction">all-visible</span>' : ''}<span>${used}/${PAGE_CAP} tuples${!isToast && db.fillfactor < 100 ? ` <span class="ff-note">(fillfactor ${db.fillfactor}: inserts stop at ${capIns})</span>` : ''}</span>`;
+    return `<div class="page"><div class="page-head">${head}</div>${bar}<div class="slotcap"><span>line pointers →</span><span>← tuples</span></div><div class="lps">${rows}</div></div>`;
+  }).join('');
+}
+
+// ---------- other panels ----------
+function entryState(e) {
+  const lp = db.getLp(db.heap, e.tid);
+  if (!lp || lp.state === 'unused' || lp.state === 'dead') return 'dead';
+  if (lp.state === 'redirect') return 'live';
+  const pg = db.heap.pages[e.tid.p], ch = db.chainFrom(pg, e.tid.lp, false);
+  return db.tupleState(pg.lps[ch[ch.length - 1] - 1].tuple);
+}
+function indexHtml() {
+  const list = Object.values(db.indexes);
+  if (!list.length) return '<p class="empty-msg">No index on this table yet.</p>';
+  const ks = k => k.length > 1 ? '(' + k.map(fmtVal).join(', ') + ')' : fmtVal(k[0]);
+  return list.map(idx => {
+    const leaves = db.indexLeaves(idx), seps = leaves.slice(1).map(l => l[0] ? ks(l[0].key) : '');
+    return `<div class="btree"><div class="btree-name">${esc(idx.name)}: B-tree on (${idx.cols.join(', ')})${(idx.include || []).length ? ` INCLUDE (${idx.include.join(', ')})` : ''}</div>
+      <div class="root"><div class="node"><div class="nh">root page</div><div class="nb">${seps.length ? seps.map(s => `<span>${esc(s)}</span>`).join('<span style="color:var(--muted)">|</span>') : '<span style="color:var(--muted)">one leaf</span>'}</div></div></div>
+      <div class="leaves">${leaves.map((leaf, li) => `<div class="node leaf"><div class="nh">leaf ${li + 1}</div><div class="nb">${leaf.length ? leaf.map(e => { const h = db.touchedIdx[idx.name + '|' + tidKey(e.tid)]; return `<span class="ie ${entryState(e)}${h === 'hit' ? ' hit' : h === 'read' ? ' rd' : ''}">${esc(ks(e.key))}${e.inc && Object.keys(e.inc).length ? ` <span class="inc">${Object.entries(e.inc).map(([k, v]) => esc(k + ' ' + fmtVal(v))).join(', ')}</span>` : ''} → ${tidStr(e.tid)}</span>`; }).join('') : '<span style="color:var(--muted)">empty</span>'}</div></div>`).join('')}</div></div>`;
+  }).join('');
+}
+function txnHtml() {
+  const x = Object.keys(db.clog).map(Number).sort((a, b) => a - b);
+  const names = tour().sessions === 2 ? ['A', 'B'] : ['A'];
+  return `<div class="shm-row" style="margin-top:0">
+    <div><h3 class="mini">Commit log (pg_xact) <span class="mini-sub">status of every transaction ID</span></h3><div class="xlist">${x.map(id => { const s = db.clog[id]; return `<span class="xchip ${s === 'in progress' ? 'inprog' : s}">${id} ${s}</span>`; }).join('')}</div>
+      <p class="empty-msg" style="margin:8px 0 0;font-size:.8rem">Next transaction ID: <b class="mono">${db.nextXid}</b></p></div>
+    <div><h3 class="mini">Running transactions <span class="mini-sub">(the ProcArray; snapshots are built from it)</span></h3>
+      <table class="proc"><thead><tr><th>${names.length > 1 ? 'session' : ''}</th><th>xid</th><th>snapshot</th><th>state</th></tr></thead><tbody>${names.map(n => { const s = db.sessions[n]; return `<tr><td>${names.length > 1 ? n : ''}</td><td>${s.xid ?? '—'}</td><td>${s.inTx && s.snapshot ? db.snapStr(s.snapshot) : '—'}</td><td style="font-family:var(--sans)">${s.failed ? 'failed' : s.inTx ? 'in transaction' : 'idle'}</td></tr>`; }).join('')}</tbody></table>
+      <p class="empty-msg" style="margin:8px 0 0;font-size:.8rem">Snapshot format: <span class="mono">xmin:xmax:running</span>. IDs below xmin had finished, IDs from xmax on hadn't started, and the listed ones were still running. VACUUM can remove rows deleted before <b class="mono">${db.horizon()}</b>.</p></div></div>`;
+}
+function buffersHtml() {
+  const bufs = db.buffers.map((b, i) => {
+    const hand = i === db.hand ? '<span class="hand">clock hand</span>' : '', tch = db.touchedBuf[i];
+    const tag = tch && BTAG[tch] ? `<span class="btag ${tch}">${BTAG[tch]}</span>` : '';
+    if (!b) return `<div class="bcell free"><div class="bh"><span>buffer ${i}</span></div><div class="bb">free</div>${hand}${tag}</div>`;
+    return `<div class="bcell${b.dirty ? ' dirtyb' : ''}"><div class="bh"><span>buffer ${i}</span>${b.dirty ? '<span class="dirty">dirty</span>' : '<span>clean</span>'}</div><div class="bb"><div class="tag">${esc(b.rel)}</div><div class="meta"><span>block ${b.blk}</span><span class="pips" title="usage count ${b.usage} of 5">${[1, 2, 3, 4, 5].map(n => `<i class="${n <= b.usage ? 'on' : ''}"></i>`).join('')}</span></div></div>${hand}${tag}</div>`;
+  }).join('');
+  const cached = {}; db.buffers.forEach(b => { if (b) cached[b.key] = b.dirty ? 'dirty' : 'cached'; });
+  const disk = db.diskBlocks().map(r => `<div class="diskrow"><span class="rn">${esc(r.rel)}</span><div class="blocks">${Array.from({ length: r.n }, (_, i) => `<span class="blk ${cached[r.rel + '/' + i] || ''}">${i}</span>`).join('')}</div></div>`).join('');
+  const b = db.trace && db.trace.buffers;
+  return `<div class="shm-box"><span class="lbl">shared memory</span><div class="bufgrid">${bufs}</div></div>
+    ${b ? `<div class="bufline">Last step: shared hit=${b.hit} read=${b.read} dirtied=${b.dirtied} written=${b.written}${b.extended ? ` <span>extended=${b.extended}</span>` : ''} <span>(the counters EXPLAIN (ANALYZE, BUFFERS) shows)</span></div>` : ''}
+    <div class="disk"><h3 class="mini">Disk <span class="mini-sub">one file per table or index</span></h3>${disk}
+      <div class="disk-legend"><span><i style="border-color:var(--line);background:var(--panel2)"></i>on disk only</span><span><i style="border-color:var(--accent);background:var(--accent-soft)"></i>in memory, same as disk</span><span><i style="border-color:var(--amber);background:var(--amber-soft)"></i>in memory and changed; disk copy is stale</span></div></div>`;
+}
+function traceHtml() {
+  const tr = db.trace;
+  if (!tr || !tr.session) return '<p class="empty-msg">Step forward to see every action Postgres takes for a statement.</p>';
+  return `<div class="trace-tools" style="padding:0 0 8px"><span class="trace-plan" style="margin:0">${esc(tr.plan)}</span><label><input type="checkbox" id="showbuf" ${showBuf ? 'checked' : ''}> include shared-buffer activity</label></div>
+    <ul class="steps${showBuf ? '' : ' nobuf'}">${tr.steps.map(s => `<li class="${s.head ? 'head' : ''} ${s.sub ? 'sub' : ''} ${s.buf ? 'buf' : ''} ${s.verdict ? 'v-' + s.verdict : ''}" ${s.tid ? `data-tid="${tkey(s.rel || TABLE, s.tid)}"` : ''}>${esc(s.text)}</li>`).join('')}</ul>`;
+}
+
+function panel(id, title, sub, body) { return `<section class="panel" id="panel-${id}"><h2>${title}</h2>${sub ? `<p class="sub">${sub}</p>` : ''}<div class="panel-body">${body}</div></section>`; }
+
+function renderStage() {
+  const t = tour(), two = t.sessions === 2;
+  const lastS = cur.k > 0 ? (t.steps.slice(0, cur.k).reverse().find(s => s.sql) || {}).s || 'A' : null;
+  let html = `<div class="results">${(two ? ['A', 'B'] : ['A']).map(n => sessionCard(n, lastS === n && cur.k > 0 && !!t.steps[cur.k - 1].sql)).join('')}</div>`;
+  const heapFirst = t.first !== 'buffers';
+  const bufHtml = panelOn('buffers') ? panel('buf', 'Shared buffers', 'Every page is read and changed here, in memory, never directly on disk.', buffersHtml()) : '';
+  if (!heapFirst) html += bufHtml;
+  html += panel('heap', 'Table: accounts', lvl() < L.hdr ? 'Each card is a page. Slots are numbered from 1; a row\'s address is (page, slot).' : '<i class="sw" style="background:var(--live)"></i>live <i class="sw" style="background:var(--dead)"></i>dead <i class="sw" style="background:var(--amber)"></i>written by a transaction that hasn\'t finished <i class="sw" style="background:var(--grey)"></i>aborted', `<div class="pages">${renderRel(db.heap, false)}</div>`);
+  if (panelOn('txn')) html += panel('txn', 'Transactions', '', txnHtml());
+  if (panelOn('index')) html += panel('index', 'B-tree indexes', 'Each entry is a key and the ctid of a row, kept in sorted order. In the last step, dark entries led to a row and light ones were read but rejected. Struck-through entries lead to dead rows.', indexHtml());
+  if (panelOn('toast')) html += panel('toast', 'TOAST table', 'Holds values too big to keep in the row, in chunks of up to about 2 KB.', db.toast.pages.length ? `<div class="pages">${renderRel(db.toast, true)}</div>` : '<p class="empty-msg">Empty so far.</p>');
+  if (heapFirst) html += bufHtml;
+  if (panelOn('trace')) html += panel('trace', 'Execution details', 'Everything Postgres did for the last statement.', traceHtml());
+  $('#stage').innerHTML = html;
+  const sb = $('#showbuf'); if (sb) sb.onchange = e => { showBuf = e.target.checked; renderStage(); };
+  document.querySelectorAll('#panel-trace li[data-tid]').forEach(li => {
+    li.onmouseenter = () => document.querySelectorAll(`.tuple[data-tid="${li.dataset.tid}"]`).forEach(x => x.classList.add('ping'));
+    li.onmouseleave = () => document.querySelectorAll('.tuple.ping').forEach(x => x.classList.remove('ping'));
+  });
+  // focus highlight for the current step
+  const st = cur.k > 0 ? t.steps[cur.k - 1] : null, f = st && st.focus;
+  const sel = { slotbar: '.slotbar', lps: '.sb-lp, .lpn', tuples: '.sb-t, #panel-heap .tuple', ctid: '#panel-heap .tid', hdr: '#panel-heap .hdrs', txn: '#panel-txn', index: '#panel-index', vm: '.vm-badge', toast: '#panel-toast', buffers: '#panel-buf .bufgrid' }[f];
+  if (sel) document.querySelectorAll(sel).forEach(el => el.classList.add('focus'));
+}
+
+function render() {
+  const home = view === 'home', site = view === 'site', page = home || site;
+  $('#site').hidden = !site; $('#home').hidden = !home; $('#app').hidden = page; $('#mnav').style.display = page ? 'none' : '';
+  $('#toggles').style.display = page ? 'none' : '';
+  $('#contents-btn').style.display = view === 'tour' ? '' : 'none';
+  $('#crumb').innerHTML = site ? '' : '/ <a href="#postgres" id="crumb-pg">Postgres</a>';
+  const cp = $('#crumb-pg'); if (cp) cp.onclick = e => { e.preventDefault(); showHome(); };
+  document.title = site ? 'Tech, Blueprinted: software internals, drawn open' : home ? 'Postgres internals, visualised | Tech, Blueprinted' : `${tour().title}: Postgres internals | Tech, Blueprinted`;
+  if (site) { renderSite(); return; }
+  if (home) { renderHome(); return; }
+  renderToggles(); renderToc(); renderStory(); renderStage();
+}
+$('#home-link').onclick = e => { e.preventDefault(); showSite(); };
+$('#contents-btn').onclick = showHome;
+
+document.addEventListener('keydown', e => {
+  if (view !== 'tour') return;
+  if (e.target.closest && e.target.closest('input, select, textarea')) return;
+  if (e.key === 'ArrowRight') { e.preventDefault(); next(); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); back(); }
+});
+document.documentElement.setAttribute('data-skin', 'blueprint');
+(function start() {
+  const m = (location.hash || '').match(/^#([\w-]+)\/(\d+)$/);
+  const ti = m ? TOURS.findIndex(t => t.id === m[1]) : -1;
+  if (ti >= 0) goTo(ti, +m[2]); else if (/^#(postgres|contents)$/.test(location.hash)) showHome(); else showSite();
+})();
+</script></body></html>

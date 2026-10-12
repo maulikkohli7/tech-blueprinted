@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" data-skin="blueprint">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>B-tree index in Postgres, explained step by step | Tech, Blueprinted</title>
+<meta name="description" content="How a B-tree finds a row without reading the whole table. An index is a separate structure that maps values to ctids, so Postgres can find rows without…">
+<link rel="canonical" href="https://maulikkohli7.github.io/tech-blueprinted/postgres/btree-index/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0E2A46">
+<meta property="og:site_name" content="Tech, Blueprinted">
+<meta property="og:type" content="article">
+<meta property="og:title" content="B-tree index in Postgres, explained step by step | Tech, Blueprinted">
+<meta property="og:description" content="How a B-tree finds a row without reading the whole table. An index is a separate structure that maps values to ctids, so Postgres can find rows without…">
+<meta property="og:url" content="https://maulikkohli7.github.io/tech-blueprinted/postgres/btree-index/">
+<meta property="og:image" content="https://maulikkohli7.github.io/tech-blueprinted/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="B-tree index in Postgres, explained step by step | Tech, Blueprinted">
+<meta name="twitter:description" content="How a B-tree finds a row without reading the whole table. An index is a separate structure that maps values to ctids, so Postgres can find rows without…">
+<meta name="twitter:image" content="https://maulikkohli7.github.io/tech-blueprinted/assets/og.png">
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/site.css">
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://maulikkohli7.github.io/tech-blueprinted/#website","name":"Tech, Blueprinted","url":"https://maulikkohli7.github.io/tech-blueprinted/","inLanguage":"en"},{"@type":"LearningResource","@id":"https://maulikkohli7.github.io/tech-blueprinted/postgres/btree-index/","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/btree-index/","name":"B-tree index in Postgres","headline":"B-tree index: How a B-tree finds a row without reading the whole table.","description":"An index is a separate structure that maps values to ctids, so Postgres can find rows without reading every page. The default kind, and the only one in this series, is the B-tree.","abstract":"How a B-tree finds a row without reading the whole table.","inLanguage":"en","learningResourceType":"Interactive tutorial","interactivityType":"active","educationalLevel":"Intermediate","isAccessibleForFree":true,"timeRequired":"PT3M","keywords":"Postgres, PostgreSQL, B-tree indexes, B-tree, seq scan vs index scan","teaches":["B-tree","seq scan vs index scan"],"about":{"@type":"SoftwareApplication","name":"PostgreSQL","applicationCategory":"DatabaseApplication"},"isPartOf":{"@type":"CollectionPage","@id":"https://maulikkohli7.github.io/tech-blueprinted/postgres/","name":"Postgres internals, visualised"},"position":9,"dateModified":"2026-10-12"},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Tech, Blueprinted","item":"https://maulikkohli7.github.io/tech-blueprinted/"},{"@type":"ListItem","position":2,"name":"Postgres","item":"https://maulikkohli7.github.io/tech-blueprinted/postgres/"},{"@type":"ListItem","position":3,"name":"B-tree index","item":"https://maulikkohli7.github.io/tech-blueprinted/postgres/btree-index/"}]}]}</script>
+<script defer src="../../assets/js/tours.js"></script>
+<script defer src="../../assets/js/views.js"></script>
+<script defer src="../../assets/js/engine.js"></script>
+<script defer src="../../assets/js/app.js"></script>
+</head>
+<body data-page="tour" data-root="../../" data-tour="index">
+<a class="skip" href="#content">Skip to content</a>
+<header class="masthead"><div class="top-in">
+  <div class="brand"><a href="../../" class="logo"><svg width="26" height="26" viewBox="0 0 34 34" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="28" height="28"/><path d="M3 17h14v14"/><path d="M17 17l14-14" stroke="var(--accent)"/></svg><b>Tech, Blueprinted</b></a><span class="crumb">/ <a href="../../postgres/">Postgres</a></span><a class="contents-link" href="../../postgres/">All Postgres tours</a></div>
+  <div style="display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center"><div class="toggles" id="toggles"></div></div>
+</div></header>
+<main id="content">
+<div class="app" id="app">
+  <nav class="toc" id="toc" aria-label="Tours"><h3>Storage</h3><ol><li class=""><a href="../../postgres/pages/" aria-current="false"><span class="num">1</span>Pages</a></li><li class=""><a href="../../postgres/ctid/" aria-current="false"><span class="num">2</span>ctid</a></li><li class=""><a href="../../postgres/mvcc/" aria-current="false"><span class="num">3</span>MVCC</a></li></ol><h3>Concurrency</h3><ol><li class=""><a href="../../postgres/snapshots/" aria-current="false"><span class="num">4</span>Snapshots</a></li><li class=""><a href="../../postgres/isolation-levels/" aria-current="false"><span class="num">5</span>Isolation levels</a></li><li class=""><a href="../../postgres/row-locks/" aria-current="false"><span class="num">6</span>Row locks</a></li></ol><h3>Cleanup</h3><ol><li class=""><a href="../../postgres/vacuum/" aria-current="false"><span class="num">7</span>VACUUM</a></li><li class=""><a href="../../postgres/long-transactions/" aria-current="false"><span class="num">8</span>Long transactions</a></li></ol><h3>B-tree indexes</h3><ol><li class=""><a href="../../postgres/btree-index/" aria-current="true"><span class="num">9</span>B-tree index</a></li><li class=""><a href="../../postgres/multicolumn-indexes/" aria-current="false"><span class="num">10</span>Multicolumn indexes</a></li><li class=""><a href="../../postgres/dead-index-entries/" aria-current="false"><span class="num">11</span>Dead index entries</a></li><li class=""><a href="../../postgres/index-only-scans/" aria-current="false"><span class="num">12</span>Index-only scans</a></li><li class=""><a href="../../postgres/hot-updates/" aria-current="false"><span class="num">13</span>HOT updates</a></li></ol><h3>Space</h3><ol><li class=""><a href="../../postgres/fillfactor/" aria-current="false"><span class="num">14</span>Fillfactor</a></li><li class=""><a href="../../postgres/toast/" aria-current="false"><span class="num">15</span>TOAST</a></li></ol><h3>Memory</h3><ol><li class=""><a href="../../postgres/shared-buffers/" aria-current="false"><span class="num">16</span>Shared buffers</a></li></ol></nav>
+  <section class="story" id="story" aria-live="polite">
+    <select class="toc-select" id="tsel" aria-label="Choose a tour"><option value="0" >1. Pages</option><option value="1" >2. ctid</option><option value="2" >3. MVCC</option><option value="3" >4. Snapshots</option><option value="4" >5. Isolation levels</option><option value="5" >6. Row locks</option><option value="6" >7. VACUUM</option><option value="7" >8. Long transactions</option><option value="8" selected>9. B-tree index</option><option value="9" >10. Multicolumn indexes</option><option value="10" >11. Dead index entries</option><option value="11" >12. Index-only scans</option><option value="12" >13. HOT updates</option><option value="13" >14. Fillfactor</option><option value="14" >15. TOAST</option><option value="15" >16. Shared buffers</option></select>
+    <p class="kicker">Tour 9 of 16, B-tree indexes</p>
+    <h1>B-tree index</h1>
+    <div class="dots" aria-label="Steps"><button aria-label="Introduction" class=" cur" data-k="0"></button><button aria-label="Step 1" class=" " data-k="1"></button><button aria-label="Step 2" class=" " data-k="2"></button><button aria-label="Step 3" class=" " data-k="3"></button><button aria-label="Step 4" class=" " data-k="4"></button><button aria-label="Step 5" class=" " data-k="5"></button><button aria-label="Step 6" class=" " data-k="6"></button></div>
+    <p class="prose">An index is a separate structure that maps values to ctids, so Postgres can find rows without reading every page. The default kind, and the only one in this series, is the B-tree.</p>
+    <div class="nav"><button class="btn" id="b-back" >Back</button><button class="btn primary" id="b-next">Start</button><span class="keys">← → keys work too</span></div></section>
+  <section class="stage" id="stage" aria-label="Simulated Postgres"><noscript><p class="empty-msg">The interactive drawing needs JavaScript. The whole tour is written out below.</p></noscript></section>
+</div>
+<article class="walk" aria-labelledby="walk-h">
+    <h2 id="walk-h">The whole tour, step by step</h2>
+    <p class="prose">An index is a separate structure that maps values to ctids, so Postgres can find rows without reading every page. The default kind, and the only one in this series, is the B-tree.</p>
+    <ol class="walk-steps">
+      <li><pre class="walk-sql"><code>INSERT INTO accounts VALUES (4, 'dave', 400), (5, 'erin', 500), (6, 'frank', 600), (7, 'grace', 700), (8, 'heidi', 800), (9, 'ivan', 900), (10, 'judy', 1000);</code></pre><p>Ten rows now, spread over three pages.</p></li>
+      <li><pre class="walk-sql"><code>SELECT * FROM accounts WHERE id = 7;</code></pre><p>With no index, finding one row means a sequential scan: read all 3 pages and check all 10 rows.</p></li>
+      <li><pre class="walk-sql"><code>CREATE INDEX ON accounts(id);</code></pre><p>The index is a B-tree in its own file. Its leaf pages hold every id in sorted order, each with the ctid of its row. The root page says which leaf covers which range of ids.</p></li>
+      <li><pre class="walk-sql"><code>SELECT * FROM accounts WHERE id = 7;</code></pre><p>Read the root, follow it to the leaf holding 7, take the ctid (1,3), and read just that heap page. Here that's 3 pages either way, but the index path stays about the same size as the table grows, while a sequential scan grows with it.</p></li>
+      <li><pre class="walk-sql"><code>SELECT * FROM accounts WHERE id &gt;= 8;</code></pre><p>Ranges work too: the leaf entries are sorted, so Postgres finds 8 and reads along the leaf.</p></li>
+      <li><pre class="walk-sql"><code>SELECT * FROM accounts WHERE balance &gt; 500;</code></pre><p>There's no index on balance, so it's a sequential scan again. An index only helps queries that filter on its column.</p></li>
+    </ol>
+    <nav class="pager" aria-label="More tours">
+      <a rel="prev" href="../../postgres/long-transactions/"><span>Previous tour</span><b>Long transactions</b></a>
+      <a rel="next" class="nx" href="../../postgres/multicolumn-indexes/"><span>Next tour</span><b>Multicolumn indexes</b></a>
+    </nav></article>
+</main>
+<div class="mobile-nav" id="mnav"></div>
+<footer class="foot"><div>
+  <p><a href="../../">Tech, Blueprinted</a>: interactive, step-by-step visual guides to how software works inside.</p>
+  <p><a href="../../postgres/">All Postgres tours</a> · Runs entirely in your browser. Progress is saved on this device only.</p>
+</div></footer>
+</body>
+</html>

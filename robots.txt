@@ -1,3 +1,4 @@
 User-agent: *
 Allow: /
-Sitemap: https://YOUR-USERNAME.github.io/tech-blueprinted/sitemap.xml
+
+Sitemap: https://maulikkohli7.github.io/tech-blueprinted/sitemap.xml

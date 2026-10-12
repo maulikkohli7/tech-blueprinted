@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en" data-skin="blueprint">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HOT updates in Postgres, explained step by step | Tech, Blueprinted</title>
+<meta name="description" content="How some updates skip the indexes entirely. Updating a row normally means adding an entry to every index. HOT (heap-only tuple) updates skip that, as long as…">
+<link rel="canonical" href="https://maulikkohli7.github.io/tech-blueprinted/postgres/hot-updates/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0E2A46">
+<meta property="og:site_name" content="Tech, Blueprinted">
+<meta property="og:type" content="article">
+<meta property="og:title" content="HOT updates in Postgres, explained step by step | Tech, Blueprinted">
+<meta property="og:description" content="How some updates skip the indexes entirely. Updating a row normally means adding an entry to every index. HOT (heap-only tuple) updates skip that, as long as…">
+<meta property="og:url" content="https://maulikkohli7.github.io/tech-blueprinted/postgres/hot-updates/">
+<meta property="og:image" content="https://maulikkohli7.github.io/tech-blueprinted/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="HOT updates in Postgres, explained step by step | Tech, Blueprinted">
+<meta name="twitter:description" content="How some updates skip the indexes entirely. Updating a row normally means adding an entry to every index. HOT (heap-only tuple) updates skip that, as long as…">
+<meta name="twitter:image" content="https://maulikkohli7.github.io/tech-blueprinted/assets/og.png">
+<link rel="icon" href="../../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/css/site.css">
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://maulikkohli7.github.io/tech-blueprinted/#website","name":"Tech, Blueprinted","url":"https://maulikkohli7.github.io/tech-blueprinted/","inLanguage":"en"},{"@type":"LearningResource","@id":"https://maulikkohli7.github.io/tech-blueprinted/postgres/hot-updates/","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/hot-updates/","name":"HOT updates in Postgres","headline":"HOT updates: How some updates skip the indexes entirely.","description":"Updating a row normally means adding an entry to every index. HOT (heap-only tuple) updates skip that, as long as no indexed column changes and the new version fits on the same page.","abstract":"How some updates skip the indexes entirely.","inLanguage":"en","learningResourceType":"Interactive tutorial","interactivityType":"active","educationalLevel":"Intermediate","isAccessibleForFree":true,"timeRequired":"PT6M","keywords":"Postgres, PostgreSQL, B-tree indexes, heap-only tuples, pruning, redirects","teaches":["heap-only tuples","pruning","redirects"],"about":{"@type":"SoftwareApplication","name":"PostgreSQL","applicationCategory":"DatabaseApplication"},"isPartOf":{"@type":"CollectionPage","@id":"https://maulikkohli7.github.io/tech-blueprinted/postgres/","name":"Postgres internals, visualised"},"position":13,"dateModified":"2026-10-12"},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Tech, Blueprinted","item":"https://maulikkohli7.github.io/tech-blueprinted/"},{"@type":"ListItem","position":2,"name":"Postgres","item":"https://maulikkohli7.github.io/tech-blueprinted/postgres/"},{"@type":"ListItem","position":3,"name":"HOT updates","item":"https://maulikkohli7.github.io/tech-blueprinted/postgres/hot-updates/"}]}]}</script>
+<script defer src="../../assets/js/tours.js"></script>
+<script defer src="../../assets/js/views.js"></script>
+<script defer src="../../assets/js/engine.js"></script>
+<script defer src="../../assets/js/app.js"></script>
+</head>
+<body data-page="tour" data-root="../../" data-tour="hot">
+<a class="skip" href="#content">Skip to content</a>
+<header class="masthead"><div class="top-in">
+  <div class="brand"><a href="../../" class="logo"><svg width="26" height="26" viewBox="0 0 34 34" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="28" height="28"/><path d="M3 17h14v14"/><path d="M17 17l14-14" stroke="var(--accent)"/></svg><b>Tech, Blueprinted</b></a><span class="crumb">/ <a href="../../postgres/">Postgres</a></span><a class="contents-link" href="../../postgres/">All Postgres tours</a></div>
+  <div style="display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center"><div class="toggles" id="toggles"></div></div>
+</div></header>
+<main id="content">
+<div class="app" id="app">
+  <nav class="toc" id="toc" aria-label="Tours"><h3>Storage</h3><ol><li class=""><a href="../../postgres/pages/" aria-current="false"><span class="num">1</span>Pages</a></li><li class=""><a href="../../postgres/ctid/" aria-current="false"><span class="num">2</span>ctid</a></li><li class=""><a href="../../postgres/mvcc/" aria-current="false"><span class="num">3</span>MVCC</a></li></ol><h3>Concurrency</h3><ol><li class=""><a href="../../postgres/snapshots/" aria-current="false"><span class="num">4</span>Snapshots</a></li><li class=""><a href="../../postgres/isolation-levels/" aria-current="false"><span class="num">5</span>Isolation levels</a></li><li class=""><a href="../../postgres/row-locks/" aria-current="false"><span class="num">6</span>Row locks</a></li></ol><h3>Cleanup</h3><ol><li class=""><a href="../../postgres/vacuum/" aria-current="false"><span class="num">7</span>VACUUM</a></li><li class=""><a href="../../postgres/long-transactions/" aria-current="false"><span class="num">8</span>Long transactions</a></li></ol><h3>B-tree indexes</h3><ol><li class=""><a href="../../postgres/btree-index/" aria-current="false"><span class="num">9</span>B-tree index</a></li><li class=""><a href="../../postgres/multicolumn-indexes/" aria-current="false"><span class="num">10</span>Multicolumn indexes</a></li><li class=""><a href="../../postgres/dead-index-entries/" aria-current="false"><span class="num">11</span>Dead index entries</a></li><li class=""><a href="../../postgres/index-only-scans/" aria-current="false"><span class="num">12</span>Index-only scans</a></li><li class=""><a href="../../postgres/hot-updates/" aria-current="true"><span class="num">13</span>HOT updates</a></li></ol><h3>Space</h3><ol><li class=""><a href="../../postgres/fillfactor/" aria-current="false"><span class="num">14</span>Fillfactor</a></li><li class=""><a href="../../postgres/toast/" aria-current="false"><span class="num">15</span>TOAST</a></li></ol><h3>Memory</h3><ol><li class=""><a href="../../postgres/shared-buffers/" aria-current="false"><span class="num">16</span>Shared buffers</a></li></ol></nav>
+  <section class="story" id="story" aria-live="polite">
+    <select class="toc-select" id="tsel" aria-label="Choose a tour"><option value="0" >1. Pages</option><option value="1" >2. ctid</option><option value="2" >3. MVCC</option><option value="3" >4. Snapshots</option><option value="4" >5. Isolation levels</option><option value="5" >6. Row locks</option><option value="6" >7. VACUUM</option><option value="7" >8. Long transactions</option><option value="8" >9. B-tree index</option><option value="9" >10. Multicolumn indexes</option><option value="10" >11. Dead index entries</option><option value="11" >12. Index-only scans</option><option value="12" selected>13. HOT updates</option><option value="13" >14. Fillfactor</option><option value="14" >15. TOAST</option><option value="15" >16. Shared buffers</option></select>
+    <p class="kicker">Tour 13 of 16, B-tree indexes</p>
+    <h1>HOT updates</h1>
+    <div class="dots" aria-label="Steps"><button aria-label="Introduction" class=" cur" data-k="0"></button><button aria-label="Step 1" class=" " data-k="1"></button><button aria-label="Step 2" class=" " data-k="2"></button><button aria-label="Step 3" class=" " data-k="3"></button><button aria-label="Step 4" class=" " data-k="4"></button><button aria-label="Step 5" class=" " data-k="5"></button><button aria-label="Step 6" class=" " data-k="6"></button><button aria-label="Step 7" class=" " data-k="7"></button><button aria-label="Step 8" class=" " data-k="8"></button><button aria-label="Step 9" class=" " data-k="9"></button><button aria-label="Step 10" class=" " data-k="10"></button><button aria-label="Step 11" class=" " data-k="11"></button></div>
+    <p class="prose">Updating a row normally means adding an entry to every index. HOT (heap-only tuple) updates skip that, as long as no indexed column changes and the new version fits on the same page.</p>
+    <div class="nav"><button class="btn" id="b-back" >Back</button><button class="btn primary" id="b-next">Start</button><span class="keys">← → keys work too</span></div></section>
+  <section class="stage" id="stage" aria-label="Simulated Postgres"><noscript><p class="empty-msg">The interactive drawing needs JavaScript. The whole tour is written out below.</p></noscript></section>
+</div>
+<article class="walk" aria-labelledby="walk-h">
+    <h2 id="walk-h">The whole tour, step by step</h2>
+    <p class="prose">Updating a row normally means adding an entry to every index. HOT (heap-only tuple) updates skip that, as long as no indexed column changes and the new version fits on the same page.</p>
+    <ol class="walk-steps">
+      <li><pre class="walk-sql"><code>-- session A
+CREATE INDEX ON accounts(id);</code></pre><p>An index on id. balance isn't indexed, so changing it changes no index key.</p></li>
+      <li><pre class="walk-sql"><code>-- session B
+BEGIN ISOLATION LEVEL REPEATABLE READ;</code></pre><p>B will keep an old snapshot so we can see the update from both sides.</p></li>
+      <li><pre class="walk-sql"><code>-- session B
+SELECT * FROM accounts WHERE id = 1;</code></pre><p>B's snapshot is fixed with alice at 100.</p></li>
+      <li><pre class="walk-sql"><code>-- session A
+UPDATE accounts SET balance = 150 WHERE id = 1;</code></pre><p>A HOT update: no indexed column changed and page 0 had room. The new version (0,4) is marked heap-only, and no index entry was written. The index still says 1 → (0,1), and (0,1) points on to (0,4).</p></li>
+      <li><pre class="walk-sql"><code>-- session A
+SELECT * FROM accounts WHERE id = 1;</code></pre><p>The index led to (0,1), which A can't see, so Postgres followed the chain inside the page to (0,4). One index entry, two tuples, one page.</p></li>
+      <li><pre class="walk-sql"><code>-- session B
+SELECT * FROM accounts WHERE id = 1;</code></pre><p>Same entry, same chain, but B stops at (0,1), the version its snapshot sees.</p></li>
+      <li><pre class="walk-sql"><code>-- session B
+COMMIT;</code></pre><p>Now nobody needs the 100 version of alice.</p></li>
+      <li><pre class="walk-sql"><code>-- session A
+UPDATE accounts SET balance = 160 WHERE id = 1;</code></pre><p>Page 0 was full, so Postgres cleaned it in passing (&quot;pruning&quot;). The old alice was removed, but the index still points at slot 1, so slot 1 stayed behind as a redirect to slot 4. That freed room for another HOT update, at (0,5). No VACUUM needed.</p></li>
+      <li><pre class="walk-sql"><code>-- session A
+UPDATE accounts SET id = 11 WHERE id = 2;</code></pre><p>Changing an indexed column can't be HOT: the index must learn the new key 11. Pruning first removed slot 4 entirely (no index points at a heap-only tuple) and moved the redirect on to slot 5.</p></li>
+      <li><pre class="walk-sql"><code>-- session A
+VACUUM;</code></pre><p>bob's old version wasn't HOT, so it needed VACUUM: remove the index entry for 2 first, then free its slot.</p></li>
+      <li><pre class="walk-sql"><code>-- session A
+SELECT * FROM accounts WHERE id = 1;</code></pre><p>Index → slot 1 → redirect → slot 5. Three updates to alice, and still a single index entry.</p></li>
+    </ol>
+    <nav class="pager" aria-label="More tours">
+      <a rel="prev" href="../../postgres/index-only-scans/"><span>Previous tour</span><b>Index-only scans</b></a>
+      <a rel="next" class="nx" href="../../postgres/fillfactor/"><span>Next tour</span><b>Fillfactor</b></a>
+    </nav></article>
+</main>
+<div class="mobile-nav" id="mnav"></div>
+<footer class="foot"><div>
+  <p><a href="../../">Tech, Blueprinted</a>: interactive, step-by-step visual guides to how software works inside.</p>
+  <p><a href="../../postgres/">All Postgres tours</a> · Runs entirely in your browser. Progress is saved on this device only.</p>
+</div></footer>
+</body>
+</html>

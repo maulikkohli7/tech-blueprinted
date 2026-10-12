@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en" data-skin="blueprint">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Postgres internals, visualised: 16 interactive tours | Tech, Blueprinted</title>
+<meta name="description" content="16 short, interactive tours of Postgres internals: pages, ctid, MVCC, snapshots, isolation levels, row locks, VACUUM, B-tree indexes, HOT updates, TOAST and shared buffers.">
+<link rel="canonical" href="https://maulikkohli7.github.io/tech-blueprinted/postgres/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#0E2A46">
+<meta property="og:site_name" content="Tech, Blueprinted">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Postgres internals, visualised: 16 interactive tours | Tech, Blueprinted">
+<meta property="og:description" content="16 short, interactive tours of Postgres internals: pages, ctid, MVCC, snapshots, isolation levels, row locks, VACUUM, B-tree indexes, HOT updates, TOAST and shared buffers.">
+<meta property="og:url" content="https://maulikkohli7.github.io/tech-blueprinted/postgres/">
+<meta property="og:image" content="https://maulikkohli7.github.io/tech-blueprinted/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Postgres internals, visualised: 16 interactive tours | Tech, Blueprinted">
+<meta name="twitter:description" content="16 short, interactive tours of Postgres internals: pages, ctid, MVCC, snapshots, isolation levels, row locks, VACUUM, B-tree indexes, HOT updates, TOAST and shared buffers.">
+<meta name="twitter:image" content="https://maulikkohli7.github.io/tech-blueprinted/assets/og.png">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/site.css">
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://maulikkohli7.github.io/tech-blueprinted/#website","name":"Tech, Blueprinted","url":"https://maulikkohli7.github.io/tech-blueprinted/","inLanguage":"en"},{"@type":"CollectionPage","@id":"https://maulikkohli7.github.io/tech-blueprinted/postgres/","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/","name":"Postgres internals, visualised","isPartOf":{"@id":"https://maulikkohli7.github.io/tech-blueprinted/#website"},"mainEntity":{"@type":"ItemList","numberOfItems":16,"itemListElement":[{"@type":"ListItem","position":1,"name":"Pages","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/pages/"},{"@type":"ListItem","position":2,"name":"ctid","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/ctid/"},{"@type":"ListItem","position":3,"name":"MVCC","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/mvcc/"},{"@type":"ListItem","position":4,"name":"Snapshots","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/snapshots/"},{"@type":"ListItem","position":5,"name":"Isolation levels","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/isolation-levels/"},{"@type":"ListItem","position":6,"name":"Row locks","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/row-locks/"},{"@type":"ListItem","position":7,"name":"VACUUM","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/vacuum/"},{"@type":"ListItem","position":8,"name":"Long transactions","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/long-transactions/"},{"@type":"ListItem","position":9,"name":"B-tree index","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/btree-index/"},{"@type":"ListItem","position":10,"name":"Multicolumn indexes","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/multicolumn-indexes/"},{"@type":"ListItem","position":11,"name":"Dead index entries","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/dead-index-entries/"},{"@type":"ListItem","position":12,"name":"Index-only scans","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/index-only-scans/"},{"@type":"ListItem","position":13,"name":"HOT updates","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/hot-updates/"},{"@type":"ListItem","position":14,"name":"Fillfactor","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/fillfactor/"},{"@type":"ListItem","position":15,"name":"TOAST","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/toast/"},{"@type":"ListItem","position":16,"name":"Shared buffers","url":"https://maulikkohli7.github.io/tech-blueprinted/postgres/shared-buffers/"}]}},{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Tech, Blueprinted","item":"https://maulikkohli7.github.io/tech-blueprinted/"},{"@type":"ListItem","position":2,"name":"Postgres","item":"https://maulikkohli7.github.io/tech-blueprinted/postgres/"}]}]}</script>
+<script defer src="../assets/js/tours.js"></script>
+<script defer src="../assets/js/views.js"></script>
+<script defer src="../assets/js/app.js"></script>
+</head>
+<body data-page="postgres" data-root="../">
+<a class="skip" href="#content">Skip to content</a>
+<header class="masthead"><div class="top-in">
+  <div class="brand"><a href="../" class="logo"><svg width="26" height="26" viewBox="0 0 34 34" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="28" height="28"/><path d="M3 17h14v14"/><path d="M17 17l14-14" stroke="var(--accent)"/></svg><b>Tech, Blueprinted</b></a><span class="crumb">/ <a href="../postgres/">Postgres</a></span></div>
+  <div style="display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center"><div class="toggles" id="toggles"></div></div>
+</div></header>
+<main class="home" id="home"><span id="content"></span>
+    <nav class="back-link-wrap" aria-label="Breadcrumb"><a class="back-link" href="../">← All systems</a></nav>
+    <section class="hero">
+      <div>
+        <h1>See what Postgres does with your rows</h1>
+        <p>16 short, guided tours through pages, MVCC, indexes, VACUUM and memory. Each step runs real SQL against a small simulated Postgres and shows exactly what changes inside it. No setup, nothing to type.</p>
+        <div class="cta">
+          <a class="btn primary" href="../postgres/pages/">Start with tour 1: Pages</a>
+        </div>
+        
+      </div>
+      <div class="hero-art" aria-hidden="true">
+      <div class="ha-head"><b>Page 0</b><span>accounts, 8 KB</span></div>
+      <div class="ha-bar"><div class="sb-hdr" style="width:12%">hdr</div><div class="sb-lp" style="width:7%">1</div><div class="sb-lp" style="width:7%">2</div><div class="sb-lp" style="width:7%">3</div><div class="sb-free">free</div><div class="sb-t live" style="width:13%">t3</div><div class="sb-t dead" style="width:13%">t2</div><div class="sb-t live" style="width:13%">t1</div></div>
+      <div class="ha-rows">
+        <div class="ha-row"><div class="lpn">lp 1</div><div class="tuple live"><div class="t1"><span class="tid">(0,1)</span><span class="state">live</span></div><div class="hdrs"><span>xmin <b>100</b></span><span>xmax <b>0</b></span></div><div class="data">id=1 name='alice'</div></div></div>
+        <div class="ha-row"><div class="lpn">lp 2</div><div class="tuple dead"><div class="t1"><span class="tid">(0,2)</span><span class="state">dead</span></div><div class="hdrs"><span>xmin <b>100</b></span><span>xmax <b>101</b></span><span>t_ctid <b>→ (0,3)</b></span></div><div class="data">id=2 name='bob' balance=200</div></div></div>
+        <div class="ha-row"><div class="lpn">lp 3</div><div class="tuple live"><div class="t1"><span class="tid">(0,3)</span><span class="state">live</span></div><div class="hdrs"><span>xmin <b>101</b></span><span>xmax <b>0</b></span></div><div class="data">id=2 name='bob' balance=250</div></div></div>
+      </div></div>
+    </section>
+    <section class="module"><div><h2>Storage</h2><p>How rows are laid out on disk.</p></div>
+      <div class="cards">
+        <a class="card  " href="../postgres/pages/">
+          <span class="ct"><span class="num">1</span><b>Pages</b></span>
+          <span class="cb">What a table looks like on disk, one 8 KB page at a time.</span>
+          <span class="tags"><span>8 KB pages</span><span>line pointers</span><span>tuples</span></span>
+          <span class="cm"><span>6 steps</span><span>about 3 min</span></span>
+        </a>
+        <a class="card  " href="../postgres/ctid/">
+          <span class="ct"><span class="num">2</span><b>ctid</b></span>
+          <span class="cb">Every row has a physical address. Why it changes, and why you shouldn't store it.</span>
+          <span class="tags"><span>ctid</span><span>Tid Scan</span></span>
+          <span class="cm"><span>4 steps</span><span>about 2 min</span></span>
+        </a>
+        <a class="card  " href="../postgres/mvcc/">
+          <span class="ct"><span class="num">3</span><b>MVCC</b></span>
+          <span class="cb">Why an UPDATE leaves the old row behind.</span>
+          <span class="tags"><span>MVCC</span><span>xmin</span><span>xmax</span><span>rollback</span></span>
+          <span class="cm"><span>7 steps</span><span>about 4 min</span></span>
+        </a></div></section><section class="module"><div><h2>Concurrency</h2><p>How many transactions share one table without seeing each other's unfinished work.</p></div>
+      <div class="cards">
+        <a class="card  " href="../postgres/snapshots/">
+          <span class="ct"><span class="num">4</span><b>Snapshots</b></span>
+          <span class="cb">How a query avoids seeing half-finished transactions.</span>
+          <span class="tags"><span>visibility</span><span>pg_xact</span><span>hint bits</span></span>
+          <span class="cm"><span>6 steps, two sessions</span><span>about 3 min</span></span>
+        </a>
+        <a class="card  " href="../postgres/isolation-levels/">
+          <span class="ct"><span class="num">5</span><b>Isolation levels</b></span>
+          <span class="cb">When a snapshot is taken, and how long it lasts.</span>
+          <span class="tags"><span>read committed</span><span>repeatable read</span></span>
+          <span class="cm"><span>10 steps, two sessions</span><span>about 5 min</span></span>
+        </a>
+        <a class="card  " href="../postgres/row-locks/">
+          <span class="ct"><span class="num">6</span><b>Row locks</b></span>
+          <span class="cb">What happens when two transactions update the same row.</span>
+          <span class="tags"><span>row locks</span><span>serialization errors</span></span>
+          <span class="cm"><span>10 steps, two sessions</span><span>about 5 min</span></span>
+        </a></div></section><section class="module"><div><h2>Cleanup</h2><p>Where dead rows go, and what stops them from going.</p></div>
+      <div class="cards">
+        <a class="card  " href="../postgres/vacuum/">
+          <span class="ct"><span class="num">7</span><b>VACUUM</b></span>
+          <span class="cb">How dead rows are removed and their space reused.</span>
+          <span class="tags"><span>dead tuples</span><span>space reuse</span></span>
+          <span class="cm"><span>6 steps</span><span>about 3 min</span></span>
+        </a>
+        <a class="card  " href="../postgres/long-transactions/">
+          <span class="ct"><span class="num">8</span><b>Long transactions</b></span>
+          <span class="cb">How one open transaction can hold back cleanup everywhere.</span>
+          <span class="tags"><span>removal horizon</span><span>bloat</span></span>
+          <span class="cm"><span>7 steps, two sessions</span><span>about 4 min</span></span>
+        </a></div></section><section class="module"><div><h2>B-tree indexes</h2><p>How Postgres finds rows quickly, and what that costs. Every index here is a B-tree, the default kind.</p></div>
+      <div class="cards">
+        <a class="card  " href="../postgres/btree-index/">
+          <span class="ct"><span class="num">9</span><b>B-tree index</b></span>
+          <span class="cb">How a B-tree finds a row without reading the whole table.</span>
+          <span class="tags"><span>B-tree</span><span>seq scan vs index scan</span></span>
+          <span class="cm"><span>6 steps</span><span>about 3 min</span></span>
+        </a>
+        <a class="card  " href="../postgres/multicolumn-indexes/">
+          <span class="ct"><span class="num">10</span><b>Multicolumn indexes</b></span>
+          <span class="cb">One index over several columns, and why their order matters.</span>
+          <span class="tags"><span>column order</span><span>leading column</span></span>
+          <span class="cm"><span>8 steps</span><span>about 4 min</span></span>
+        </a>
+        <a class="card  " href="../postgres/dead-index-entries/">
+          <span class="ct"><span class="num">11</span><b>Dead index entries</b></span>
+          <span class="cb">Why every index slows down writes and collects dead entries.</span>
+          <span class="tags"><span>write amplification</span><span>stale entries</span></span>
+          <span class="cm"><span>7 steps</span><span>about 4 min</span></span>
+        </a>
+        <a class="card  " href="../postgres/index-only-scans/">
+          <span class="ct"><span class="num">12</span><b>Index-only scans</b></span>
+          <span class="cb">When Postgres can answer from the index alone, and how INCLUDE makes that possible for more queries.</span>
+          <span class="tags"><span>visibility map</span><span>heap fetches</span><span>INCLUDE</span></span>
+          <span class="cm"><span>11 steps</span><span>about 6 min</span></span>
+        </a>
+        <a class="card  " href="../postgres/hot-updates/">
+          <span class="ct"><span class="num">13</span><b>HOT updates</b></span>
+          <span class="cb">How some updates skip the indexes entirely.</span>
+          <span class="tags"><span>heap-only tuples</span><span>pruning</span><span>redirects</span></span>
+          <span class="cm"><span>11 steps, two sessions</span><span>about 6 min</span></span>
+        </a></div></section><section class="module"><div><h2>Space</h2><p>How rows fit on pages, and how to tune it.</p></div>
+      <div class="cards">
+        <a class="card  " href="../postgres/fillfactor/">
+          <span class="ct"><span class="num">14</span><b>Fillfactor</b></span>
+          <span class="cb">Leaving space on purpose to make updates cheaper.</span>
+          <span class="tags"><span>reserved space</span><span>HOT</span></span>
+          <span class="cm"><span>6 steps</span><span>about 3 min</span></span>
+        </a>
+        <a class="card  " href="../postgres/toast/">
+          <span class="ct"><span class="num">15</span><b>TOAST</b></span>
+          <span class="cb">Where values too big for a row end up.</span>
+          <span class="tags"><span>compression</span><span>out-of-line storage</span></span>
+          <span class="cm"><span>8 steps</span><span>about 4 min</span></span>
+        </a></div></section><section class="module"><div><h2>Memory</h2><p>How pages move between disk and RAM.</p></div>
+      <div class="cards">
+        <a class="card  " href="../postgres/shared-buffers/">
+          <span class="ct"><span class="num">16</span><b>Shared buffers</b></span>
+          <span class="cb">How pages move between disk and memory.</span>
+          <span class="tags"><span>cache</span><span>clock sweep</span><span>dirty pages</span><span>checkpoints</span></span>
+          <span class="cm"><span>8 steps</span><span>about 4 min</span></span>
+        </a></div></section></main>
+<footer class="foot"><div>
+  <p><a href="../">Tech, Blueprinted</a>: interactive, step-by-step visual guides to how software works inside.</p>
+  <p><a href="../postgres/">All Postgres tours</a> · Runs entirely in your browser. Progress is saved on this device only.</p>
+</div></footer>
+</body>
+</html>

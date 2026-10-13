@@ -15,7 +15,7 @@ const SITE_URL = (process.env.SITE_URL || 'https://maulikkohli7.github.io/tech-b
 const SITE_NAME = 'Tech, Blueprinted';
 const TODAY = new Date().toISOString().slice(0, 10);
 // Google Analytics 4 measurement ID (G-XXXXXXXXXX). Empty leaves analytics off.
-const GA_ID = process.env.GA_ID ?? '';
+const GA_ID = process.env.GA_ID ?? 'G-6KR3L4BVGZ';
 // Content of the google-site-verification meta tag from Google Search Console. Empty adds no tag.
 const GSC_VERIFY = process.env.GSC_VERIFY ?? '';
 

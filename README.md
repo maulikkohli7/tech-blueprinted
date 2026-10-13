@@ -27,7 +27,8 @@ Each tour runs real SQL against a small simulated Postgres written in JavaScript
 - Every page is pre-rendered HTML: its own title, description, canonical URL, Open Graph tags and schema.org data. Each tour page also has the whole tour written out as text, so it reads without JavaScript and search engines can index it.
 - JavaScript then turns the tour page into the interactive stepper. A step is kept in the address, for example `postgres/mvcc/#3`.
 - Links from the old single-page site (`#postgres`, `#versions/3`) redirect to the new pages.
-- Tour progress is saved in the browser with `localStorage`. Nothing is sent anywhere.
+- Tour progress is saved in the browser with `localStorage` and never leaves the device.
+- Google Analytics (GA4, ID set as `GA_ID` in `scripts/build.mjs`) records page views, plus `tour_step` and `tour_complete` events as readers step through a tour. Set `GA_ID=` to build without it.
 - The simulator is deliberately small (4 tuples per page, no WAL, a rule-based planner). Each tour notes where real Postgres differs.
 
 ## Editing

@@ -14,6 +14,10 @@ const DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SITE_URL = (process.env.SITE_URL || 'https://maulikkohli7.github.io/tech-blueprinted/').replace(/\/?$/, '/');
 const SITE_NAME = 'Tech, Blueprinted';
 const TODAY = new Date().toISOString().slice(0, 10);
+// Google Analytics 4 measurement ID (G-XXXXXXXXXX). Empty leaves analytics off.
+const GA_ID = process.env.GA_ID ?? '';
+// Content of the google-site-verification meta tag from Google Search Console. Empty adds no tag.
+const GSC_VERIFY = process.env.GSC_VERIFY ?? '';
 
 // Load the same data and templates the browser uses.
 const ctx = vm.createContext({});
@@ -30,6 +34,9 @@ function clip(s, n = 158) {
   if (s.length <= n) return s;
   return s.slice(0, s.lastIndexOf(' ', n - 1)).replace(/[,;:.]$/, '') + '…';
 }
+const analytics = GA_ID ? `<script async src="https://www.googletagmanager.com/gtag/js?id=${GA_ID}"></script>
+<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${GA_ID}');</script>
+` : '';
 const ldJson = obj => `<script type="application/ld+json">${JSON.stringify(obj).replace(/</g, '\\u003c')}</script>`;
 const crumbsLd = items => ({
   '@type': 'BreadcrumbList',
@@ -68,7 +75,7 @@ function layout({ path, root, title, description, page, tourId = '', crumb = fal
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="${root}assets/css/site.css">
-${ldJson({ '@context': 'https://schema.org', '@graph': ld })}
+${GSC_VERIFY && page === 'site' ? `<meta name="google-site-verification" content="${esc(GSC_VERIFY)}">\n` : ''}${analytics}${ldJson({ '@context': 'https://schema.org', '@graph': ld })}
 <script defer src="${root}assets/js/tours.js"></script>
 <script defer src="${root}assets/js/views.js"></script>
 ${engine ? `<script defer src="${root}assets/js/engine.js"></script>\n` : ''}<script defer src="${root}assets/js/app.js"></script>
@@ -154,7 +161,7 @@ files['404.html'] = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Page not found | ${SITE_NAME}</title>
 <meta name="robots" content="noindex">
-<link rel="icon" href="${base}assets/favicon.svg" type="image/svg+xml">
+${analytics}<link rel="icon" href="${base}assets/favicon.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
 body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0E2A46;background-image:linear-gradient(rgba(207,227,245,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(207,227,245,.055) 1px,transparent 1px);background-size:24px 24px;color:#F5F9FD;font-family:Archivo,"Helvetica Neue",sans-serif;padding:24px;box-sizing:border-box}

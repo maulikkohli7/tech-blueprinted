@@ -43,6 +43,7 @@ function goTo(ti, k, opts = {}) {
   cur = { ti, k };
   last = { ti, k }; try { localStorage.setItem('ip-last', JSON.stringify(last)); } catch (e) { }
   if (k === t.steps.length) { done.add(t.id); try { localStorage.setItem('ip-done', JSON.stringify([...done])); } catch (e) { } }
+  if (window.gtag && opts.track !== false) gtag('event', k === t.steps.length ? 'tour_complete' : 'tour_step', { tour_id: t.id, step: k });
   try { history.replaceState(null, '', k ? `#${k}` : location.pathname + location.search); } catch (e) { }
   render();
   if (opts.top) window.scrollTo({ top: 0 });
@@ -227,7 +228,7 @@ document.addEventListener('keydown', e => {
 document.documentElement.setAttribute('data-skin', 'blueprint');
 (function start() {
   const h = location.hash || '';
-  if (PAGE === 'tour') { const m = h.match(/^#(\d+)$/); goTo(cur.ti, m ? +m[1] : 0); return; }
+  if (PAGE === 'tour') { const m = h.match(/^#(\d+)$/); goTo(cur.ti, m ? +m[1] : 0, { track: false }); return; }
   if (PAGE === 'site') {
     // Links from the old single-page site: #postgres, #contents and #<tour>/<step>
     const m = h.match(/^#([\w-]+)\/(\d+)$/), ti = m ? TOURS.findIndex(t => t.id === m[1]) : -1;
